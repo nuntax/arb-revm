@@ -99,6 +99,16 @@ impl BatchPosterState<'_> {
     }
 
     pub fn set_funds_due<J: JournalTr>(&self, funds_due: U256, journal: &mut J) -> Result<()> {
+        let prev_funds_due = self.funds_due.get(journal)?;
+        let prev_total_funds_due = self.posters_table.total_funds_due.get(journal)?;
+        let next_total_funds_due = prev_total_funds_due
+            .checked_add(funds_due)
+            .and_then(|sum| sum.checked_sub(prev_funds_due))
+            .unwrap_or(U256::MAX);
+
+        self.posters_table
+            .total_funds_due
+            .set(next_total_funds_due, journal)?;
         self.funds_due.set(funds_due, journal)?;
         Ok(())
     }

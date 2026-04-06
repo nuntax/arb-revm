@@ -1,5 +1,7 @@
 use alloy_provider::{Provider, ProviderBuilder};
-use arb_revm::{ArbExecCfg, ArbMessageEnvelope, ArbParentHeader, execute_message};
+use arb_revm::{
+    ArbExecCfg, ArbExecutionInput, ArbMessageEnvelope, ArbParentHeader, ArbRunner, ArbRunnerError,
+};
 use arb_sequencer_network::sequencer::feed::{BroadcastFeedMessage, L1Header, Root};
 use eyre::{Result, eyre};
 use revm::{
@@ -95,15 +97,23 @@ async fn main() -> Result<()> {
         ..ArbExecCfg::default()
     };
 
-    let outcome = execute_message(&mut db, parent, &message, cfg)?;
+    let exec_input = ArbExecutionInput::new(parent, message, cfg);
+    let runner = ArbRunner::default();
+    let outcome = runner
+        .execute(&mut db, &exec_input)
+        .map_err(|err| match err {
+            ArbRunnerError::LockHeld => eyre!("execution lock held"),
+            ArbRunnerError::Execution(inner) => eyre!("execution error: {inner:?}"),
+        })?;
     println!(
-        "executed message seq={} start_block_success={} start_block_gas_used={} attempted={} executed={} skipped={} on state_block={}",
+        "executed message seq={} start_block_success={} start_block_gas_used={} attempted={} executed={} skipped={} writes={} on state_block={}",
         feed_msg.sequence_number,
         outcome.start_block_success,
         outcome.start_block_gas_used,
         outcome.attempted,
         outcome.executed,
         outcome.skipped_unsupported,
+        outcome.writes.len(),
         state_block_number
     );
     for tx in &outcome.txs {
