@@ -1,5 +1,6 @@
 use alloy_consensus::transaction::Transaction as AlloyTransaction;
 use alloy_eips::eip2718::Typed2718;
+use arb_sequencer_consensus::transactions::{ArbTxEnvelope, internal::ArbitrumInternalTx};
 use revm::context_interface::{either::Either, transaction::AccessList};
 use revm::{
     context::{
@@ -11,10 +12,16 @@ use revm::{
     primitives::{Address, B256, Bytes, TxKind, U256},
 };
 
+use crate::constants::{ARBITRUM_INTERNAL_TX_TYPE, ARBOS_ACTS_ADDRESS};
+
 /// Converts an Arbitrum consensus transaction envelope into a revm [`TxEnv`] wrapper.
 pub fn arb_envelope_to_tx_env(
     tx: &arb_sequencer_consensus::transactions::ArbTxEnvelope,
 ) -> eyre::Result<ArbTransaction<TxEnv>> {
+    if let ArbTxEnvelope::ArbitrumInternal(internal_tx) = tx {
+        return Ok(convert_internal_envelope(internal_tx));
+    }
+
     let access_list = tx
         .access_list()
         .map(|items| AccessList(items.0.clone()))
@@ -45,6 +52,24 @@ pub fn arb_envelope_to_tx_env(
     };
 
     Ok(ArbTransaction { base })
+}
+
+fn convert_internal_envelope(tx: &ArbitrumInternalTx) -> ArbTransaction<TxEnv> {
+    match tx {
+        ArbitrumInternalTx::BatchPostingReport(report) => {
+            // Internal reports are ArbOS protocol actions and execute under the ArbOS actor.
+            let mut base = TxEnv::default();
+            base.tx_type = ARBITRUM_INTERNAL_TX_TYPE;
+            base.caller = ARBOS_ACTS_ADDRESS;
+            base.kind = TxKind::Call(ARBOS_ACTS_ADDRESS);
+            base.data = report.data.clone().into();
+            base.gas_limit = 0;
+            base.gas_price = 0;
+            base.nonce = 0;
+            base.chain_id = Some(report.chain_id);
+            ArbTransaction { base }
+        }
+    }
 }
 
 /// Arbitrum transaction trait.

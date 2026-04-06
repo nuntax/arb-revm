@@ -117,6 +117,28 @@ impl StorageBacked<u64> {
     }
 }
 
+impl StorageBacked<i64> {
+    pub fn get<J: JournalTr>(&self, journal: &mut J) -> Result<i64> {
+        let signed = u256_twos_complement_to_i256(*self.slot.get_inner(journal)?);
+        i64::try_from(signed)
+            .map_err(|_| eyre::eyre!("signed i64 ArbOS slot value out of range: {signed}"))
+    }
+
+    pub fn set<J: JournalTr>(
+        &self,
+        value: i64,
+        journal: &mut J,
+    ) -> Result<StateLoad<SStoreResult>> {
+        let signed_value = if value < 0 {
+            -I256::from(U256::from(value.unsigned_abs()))
+        } else {
+            I256::from(U256::from(value as u64))
+        };
+        self.slot
+            .set_inner(i256_to_u256_twos_complement(signed_value), journal)
+    }
+}
+
 impl StorageBacked<I256> {
     pub fn get<J: JournalTr>(&self, journal: &mut J) -> Result<I256> {
         Ok(u256_twos_complement_to_i256(*self.slot.get_inner(journal)?))
