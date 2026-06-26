@@ -290,22 +290,21 @@ pub struct ArbCall<'a> {
     pub is_static: bool,
 }
 
-/// Node-path [`ArbPrecompileCtx`]: wraps an [`ArbInternals`] journal plus the bits `EvmInternals`
-/// does not itself expose (tx origin and call depth, threaded in by the `DynPrecompile` wiring).
+/// Node-path [`ArbPrecompileCtx`]: wraps an [`ArbInternals`] journal. Block env, tx origin, tx
+/// chain id and historical block hashes are all read back through `EvmInternals`; only the call
+/// depth must be threaded in (the `DynPrecompile` `PrecompileInput` does not carry it).
 pub struct ArbNodeCtx<'a, 'b> {
     journal: ArbInternals<'a, 'b>,
-    tx_caller: Address,
     call_depth: usize,
 }
 
 impl<'a, 'b> ArbNodeCtx<'a, 'b> {
     /// Builds a node-path precompile context over an `EvmInternals` handle.
     ///
-    /// `EvmInternals` exposes neither the tx origin nor the call depth, so both are passed in by
-    /// the caller (the `DynPrecompile` closure). Call depth is best-effort on this path; see
-    /// `ArbSys.isTopLevelCall`.
-    pub fn new(internals: &'b mut EvmInternals<'a>, tx_caller: Address, call_depth: usize) -> Self {
-        Self { journal: ArbInternals(internals), tx_caller, call_depth }
+    /// `EvmInternals` does not expose the EVM call depth, so it is passed in. It is best-effort on
+    /// this path (the alloy-evm `PrecompileInput` carries no depth) — see `ArbSys.isTopLevelCall`.
+    pub fn new(internals: &'b mut EvmInternals<'a>, call_depth: usize) -> Self {
+        Self { journal: ArbInternals(internals), call_depth }
     }
 }
 
@@ -329,7 +328,7 @@ impl<'a, 'b> ArbPrecompileCtx for ArbNodeCtx<'a, 'b> {
     }
 
     fn tx_caller(&self) -> Address {
-        self.tx_caller
+        self.journal.0.tx_env().caller()
     }
 
     fn tx_chain_id(&self) -> Option<u64> {

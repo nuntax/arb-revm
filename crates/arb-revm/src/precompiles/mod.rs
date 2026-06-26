@@ -318,7 +318,7 @@ fn method_arbos_bounds(arb: ArbPrecompilesEnum, sel: [u8; 4]) -> (u64, u64) {
 /// EIP-7823/7883 modexp). arb_revm targets ArbOS 40+. NOTE: this is keyed on the ArbOS
 /// version, NOT the eth spec — at ArbOS 40-51 the eth spec is Prague throughout, but the
 /// precompile set flips at the ArbOS 50 boundary.
-fn arb_eth_precompiles(spec: ArbSpecId) -> &'static Precompiles {
+pub fn arb_eth_precompiles(spec: ArbSpecId) -> &'static Precompiles {
     if spec.arbos_version() >= 50 {
         Precompiles::osaka()
     } else {
