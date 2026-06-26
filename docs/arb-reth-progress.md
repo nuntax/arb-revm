@@ -56,12 +56,13 @@ Foundation de-risked by real `cargo check`: revm unifies at **36**, alloy at **1
   under E0119 — rustc can't prove the foreign type isn't `JournalTr`).
 - **D.2 node skeleton** — ⬜ not started (NodeTypes=ArbPrimitives, ArbChainSpec 42161, NodeBuilder, MDBX,
   custom merkle stage → full mainnet header state-root + receipt-root parity).
-  **Node-path gaps to revisit:** (1) `ArbSys.isTopLevelCall` — `PrecompileInput` carries no call depth,
-  so `ArbNodeCtx` defaults depth=1 (best-effort). (2) Stylus precompiles (ArbWasm/ArbWasmCache) read
-  chain context, which `EvmInternals` doesn't surface — still on the in-EVM path only. (3) **Validation
-  owed:** the in-EVM path drives `run_dispatch` (29 parity tests), but no test yet executes an ArbOS
-  precompile THROUGH the `PrecompilesMap`/`EvmInternals` adapter — add a precompile-calling tx replay
-  through `ArbEvmConfig` to exercise the `ArbInternals` sload/sstore/balance/log glue end-to-end.
+  **Node-path E2E validated** (commit `cd93392`): a tx calling `ArbSys.arbOSVersion()` (sloads the
+  seeded `arbos_version` slot) through the `PrecompilesMap`/`EvmInternals` path matches the in-EVM
+  `arb_revm` oracle bit-for-bit (output + gas) and returns `55+51` — proving the `ArbInternals`
+  sload-via-`EvmInternals` glue + the `InterpreterResult`→`PrecompileResult` gas conversion. (arb-reth-evm 10 tests.)
+  **Node-path gaps still to revisit:** (1) `ArbSys.isTopLevelCall` — `PrecompileInput` carries no call
+  depth, so `ArbNodeCtx` defaults depth=1 (best-effort). (2) Stylus precompiles (ArbWasm/ArbWasmCache)
+  read chain context, which `EvmInternals` doesn't surface — still on the in-EVM path only.
 - **E message→block (`DigestMessage`)** — ⬜ not started. `l2message.rs` (parse_l2) already built as F groundwork.
 - **F L1 inbox derivation** — ✅ **M1 + M2 done, chain-validated** (details below). Tail remaining.
 - **G feed client** — ⬜ not started (`sequencer_client` exists).
