@@ -23,6 +23,9 @@ extern crate alloc;
 pub mod tx;
 pub use tx::ArbTx;
 
+pub mod precompiles;
+pub use precompiles::arb_precompiles_map;
+
 pub mod block;
 pub use block::{
     ArbBlockAssembler, ArbBlockExecutionCtx, ArbBlockExecutor, ArbBlockExecutorFactory,
