@@ -1,7 +1,7 @@
 use super::*;
+use crate::arb_journal::{ArbJournal, ArbPrecompileCtx};
 use arb_alloy_consensus::transactions::TxRetry;
 use revm::{
-    context_interface::{Block, Transaction},
     interpreter::{CallInputs, Gas, InstructionResult, InterpreterResult},
     primitives::{Address, B256, Bytes, Log, TxKind, keccak256},
 };
@@ -37,7 +37,7 @@ pub(super) fn run_arb_retryable_tx<CTX>(
     call_inputs: &CallInputs,
 ) -> InterpreterResult
 where
-    CTX: ContextTr<Journal: JournalTr>,
+    CTX: ArbPrecompileCtx,
 {
     let call = match ArbRetryableTx::ArbRetryableTxCalls::abi_decode(input) {
         Ok(c) => c,
@@ -146,15 +146,7 @@ where
         }
         ArbRetryableTx::ArbRetryableTxCalls::redeem(c) => {
             let redeem_input_len = input.len();
-            let current_timestamp: u64 = match ctx.block().timestamp().try_into() {
-                Ok(ts) => ts,
-                Err(_) => {
-                    return revert_result(
-                        gas_limit,
-                        "ArbRetryableTx: block timestamp does not fit in u64",
-                    );
-                }
-            };
+            let current_timestamp: u64 = ctx.block_timestamp();
             let retryable = state.retryables.retryable(c.ticketId);
 
             let exists = match retryable.exists(current_timestamp, ctx.journal_mut()) {
@@ -223,7 +215,7 @@ where
                 );
             }
 
-            let chain_id = match ctx.tx().chain_id() {
+            let chain_id = match ctx.tx_chain_id() {
                 Some(id) => U256::from(id),
                 None => match state.chain_id.get(ctx.journal_mut()) {
                     Ok(id) => id,
@@ -237,7 +229,7 @@ where
                 chain_id,
                 nonce,
                 from,
-                gas_fee_cap: U256::from(ctx.block().basefee()),
+                gas_fee_cap: U256::from(ctx.block_basefee()),
                 gas_limit: donated_gas,
                 to: match to {
                     Some(dest) => TxKind::Call(dest),
@@ -252,7 +244,7 @@ where
             };
             let retry_tx_hash = retry_tx.tx_hash();
 
-            ctx.journal_mut().log(Log::new_unchecked(
+            ctx.journal_mut().emit_log(Log::new_unchecked(
                 call_inputs.bytecode_address,
                 vec![
                     keccak256(REDEEM_SCHEDULED_EVENT_SIGNATURE),

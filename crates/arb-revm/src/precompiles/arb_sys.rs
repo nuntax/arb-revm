@@ -1,5 +1,5 @@
 use super::*;
-use revm::context_interface::{Block, journaled_state::account::JournaledAccountTr};
+use crate::arb_journal::{ArbJournal, ArbPrecompileCtx};
 use revm::interpreter::CallInputs;
 use revm::primitives::{Address, B256, Bytes, Log, keccak256};
 
@@ -17,7 +17,7 @@ pub(super) fn run_arb_sys<CTX>(
     call_inputs: &CallInputs,
 ) -> InterpreterResult
 where
-    CTX: ContextTr<Journal: JournalTr>,
+    CTX: ArbPrecompileCtx,
 {
     let call = match ArbSys::ArbSysCalls::abi_decode(input) {
         Ok(c) => c,
@@ -29,7 +29,7 @@ where
     match call {
         ArbSys::ArbSysCalls::arbBlockNumber(_) => {
             // L2 block number is stored as the EVM block number.
-            let num: u64 = ctx.block().number().try_into().unwrap_or(u64::MAX);
+            let num: u64 = ctx.block_number();
             ok_result(
                 gas_limit,
                 alloy_core::sol_types::SolValue::abi_encode(&(U256::from(num),)),
@@ -37,7 +37,7 @@ where
         }
         ArbSys::ArbSysCalls::arbBlockHash(call) => {
             let target: u64 = call.arbBlockNum.try_into().unwrap_or(u64::MAX);
-            let current: u64 = ctx.block().number().try_into().unwrap_or(u64::MAX);
+            let current: u64 = ctx.block_number();
             if target >= current || target.saturating_add(256) < current {
                 return revert_result(gas_limit, "ArbSys: invalid block number");
             }
@@ -77,7 +77,7 @@ where
             )
         }
         ArbSys::ArbSysCalls::isTopLevelCall(_) => {
-            let depth = ctx.journal().depth();
+            let depth = ctx.call_depth();
             ok_result(
                 gas_limit,
                 alloy_core::sol_types::SolValue::abi_encode(&(depth <= 2,)),
@@ -159,11 +159,11 @@ fn apply_send_tx_to_l1<CTX>(
     calldata_for_l1: &[u8],
 ) -> InterpreterResult
 where
-    CTX: ContextTr<Journal: JournalTr>,
+    CTX: ArbPrecompileCtx,
 {
     let state = ArbosState::open();
-    let arb_block_num = U256::from(ctx.block().number());
-    let timestamp = U256::from(ctx.block().timestamp());
+    let arb_block_num = U256::from(ctx.block_number());
+    let timestamp = U256::from(ctx.block_timestamp());
     let l1_block_num;
     let arbos_version;
 
@@ -220,13 +220,11 @@ where
         leaf_num = size.saturating_sub(1);
 
         if callvalue > U256::ZERO {
-            let mut account = match journal
-                .load_account_mut_skip_cold_load(precompile_address, false)
-            {
-                Ok(acc) => acc,
+            let sufficient = match journal.debit_balance(precompile_address, callvalue) {
+                Ok(ok) => ok,
                 Err(e) => return revert_result(gas_limit, &format!("ArbSys: storage error: {e}")),
             };
-            if !account.data.decr_balance(callvalue) {
+            if !sufficient {
                 return revert_result(gas_limit, "ArbSys: insufficient balance for L2->L1 burn");
             }
         }
@@ -236,7 +234,7 @@ where
         let journal = ctx.journal_mut();
         for update in &update_events {
             let position = (U256::from(update.level) << 192) + U256::from(update.num_leaves);
-            journal.log(Log::new_unchecked(
+            journal.emit_log(Log::new_unchecked(
                 precompile_address,
                 vec![
                     keccak256(SEND_MERKLE_UPDATE_EVENT_SIGNATURE),
@@ -248,7 +246,7 @@ where
             ));
         }
 
-        journal.log(Log::new_unchecked(
+        journal.emit_log(Log::new_unchecked(
             precompile_address,
             vec![
                 keccak256(L2_TO_L1_TX_EVENT_SIGNATURE),

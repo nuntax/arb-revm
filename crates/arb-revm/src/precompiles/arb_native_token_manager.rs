@@ -1,9 +1,7 @@
 use super::{ArbosState, ok_result, revert_result};
+use crate::arb_journal::ArbPrecompileCtx;
 use alloy_core::sol;
-use revm::{
-    context_interface::{ContextTr, JournalTr},
-    interpreter::InterpreterResult,
-};
+use revm::interpreter::InterpreterResult;
 
 /// ArbOS version at which ArbNativeTokenManager becomes active.
 /// Nitro reference: params.ArbosVersion_41 = 41.
@@ -28,7 +26,7 @@ pub(super) fn run_arb_native_token_manager<CTX>(
     gas_limit: u64,
 ) -> InterpreterResult
 where
-    CTX: ContextTr<Journal: JournalTr>,
+    CTX: ArbPrecompileCtx,
 {
     let state = ArbosState::open();
     let arbos_version = match state.arbos_version.get(ctx.journal_mut()) {

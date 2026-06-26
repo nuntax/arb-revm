@@ -1,6 +1,6 @@
 use super::*;
+use crate::arb_journal::ArbPrecompileCtx;
 use crate::storage::{pack_uint, stylus_param_layout as layout};
-use revm::context_interface::Block;
 use revm::interpreter::CallInputs;
 
 const FEATURE_ENABLE_DELAY_SECONDS: u64 = 7 * 24 * 60 * 60;
@@ -17,7 +17,7 @@ pub(super) fn run_arb_owner<CTX>(
     call_inputs: &CallInputs,
 ) -> InterpreterResult
 where
-    CTX: ContextTr<Journal: JournalTr>,
+    CTX: ArbPrecompileCtx,
 {
     let call = match ArbOwner::ArbOwnerCalls::abi_decode(input) {
         Ok(c) => c,
@@ -25,10 +25,7 @@ where
     };
 
     let state = ArbosState::open();
-    let block_timestamp: u64 = match ctx.block().timestamp().try_into() {
-        Ok(v) => v,
-        Err(_) => return revert_result(gas_limit, "ArbOwner: block timestamp overflow"),
-    };
+    let block_timestamp: u64 = ctx.block_timestamp();
     let j = ctx.journal_mut();
     let is_owner = match state.chain_owners.is_member(call_inputs.caller, j) {
         Ok(v) => v,
