@@ -1,8 +1,6 @@
 use super::{ArbosState, ok_result, revert_result};
-use revm::{
-    context_interface::{ContextTr, JournalTr},
-    interpreter::InterpreterResult,
-};
+use crate::arb_journal::ArbPrecompileCtx;
+use revm::interpreter::InterpreterResult;
 
 /// ArbOS version at which ArbFilteredTransactionsManager becomes active.
 /// Nitro reference: params.ArbosVersion_TransactionFiltering = ArbosVersion_60 = 60.
@@ -19,7 +17,7 @@ pub(super) fn run_arb_filtered_transactions_manager<CTX>(
     gas_limit: u64,
 ) -> InterpreterResult
 where
-    CTX: ContextTr<Journal: JournalTr>,
+    CTX: ArbPrecompileCtx,
 {
     let state = ArbosState::open();
     let arbos_version = match state.arbos_version.get(ctx.journal_mut()) {

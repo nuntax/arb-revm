@@ -25,12 +25,12 @@
 use alloy_evm::{EvmInternals, EvmInternalsError};
 use revm::{
     context_interface::{
-        Block, ContextTr, JournalTr, Transaction,
+        Block, ContextTr, Host, JournalTr, Transaction,
         context::SStoreResult,
         journaled_state::{StateLoad, TransferError, account::JournaledAccountTr},
     },
     database_interface::Database,
-    primitives::{Address, Bytes, Log, StorageKey, StorageValue, U256},
+    primitives::{Address, B256, Bytes, Log, StorageKey, StorageValue, U256},
 };
 
 /// The narrow journal surface ArbOS storage + precompiles need. See the module docs.
@@ -219,6 +219,13 @@ pub trait ArbPrecompileCtx {
     /// that is supplied per-call (see the dispatcher's `ArbCall`).
     fn tx_caller(&self) -> Address;
 
+    /// Transaction chain id (`tx.chain_id()`), `None` for pre-EIP-155 txs.
+    fn tx_chain_id(&self) -> Option<u64>;
+
+    /// Hash of historical block `number` (revm `Host::block_hash`), `None` if out of range.
+    /// Used by `ArbSys.arbBlockHash`.
+    fn block_hash(&mut self, number: u64) -> Option<B256>;
+
     /// Current EVM call depth (for `ArbSys.isTopLevelCall`).
     fn call_depth(&self) -> usize;
 }
@@ -227,7 +234,7 @@ pub trait ArbPrecompileCtx {
 /// every `<CTX: ContextTr>`-bounded precompile working after migration to the `Arb*` bound.
 impl<CTX> ArbPrecompileCtx for CTX
 where
-    CTX: ContextTr<Journal: JournalTr>,
+    CTX: ContextTr<Journal: JournalTr> + Host,
 {
     type Journal = CTX::Journal;
 
@@ -249,6 +256,14 @@ where
 
     fn tx_caller(&self) -> Address {
         self.tx().caller()
+    }
+
+    fn tx_chain_id(&self) -> Option<u64> {
+        self.tx().chain_id()
+    }
+
+    fn block_hash(&mut self, number: u64) -> Option<B256> {
+        Host::block_hash(self, number)
     }
 
     fn call_depth(&self) -> usize {
@@ -315,6 +330,14 @@ impl<'a, 'b> ArbPrecompileCtx for ArbNodeCtx<'a, 'b> {
 
     fn tx_caller(&self) -> Address {
         self.tx_caller
+    }
+
+    fn tx_chain_id(&self) -> Option<u64> {
+        self.journal.0.tx_env().chain_id()
+    }
+
+    fn block_hash(&mut self, number: u64) -> Option<B256> {
+        self.journal.0.db_mut().block_hash(number).ok()
     }
 
     fn call_depth(&self) -> usize {

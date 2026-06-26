@@ -1,4 +1,5 @@
 use super::*;
+use crate::arb_journal::ArbPrecompileCtx;
 use revm::interpreter::CallInputs;
 
 const ARBOS_VERSION_STYLUS: u64 = 30;
@@ -11,7 +12,7 @@ pub(super) fn run_arb_wasm_cache<CTX>(
     call_inputs: &CallInputs,
 ) -> InterpreterResult
 where
-    CTX: ContextTr<Journal: JournalTr>,
+    CTX: ArbPrecompileCtx,
 {
     let call = match ArbWasmCache::ArbWasmCacheCalls::abi_decode(input) {
         Ok(c) => c,

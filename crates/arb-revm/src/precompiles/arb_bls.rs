@@ -1,8 +1,6 @@
 use super::revert_result;
-use revm::{
-    context_interface::{ContextTr, JournalTr},
-    interpreter::InterpreterResult,
-};
+use crate::arb_journal::ArbPrecompileCtx;
+use revm::interpreter::InterpreterResult;
 
 /// ArbBLS — legacy BLS public key registry from Classic-era Arbitrum.
 ///
@@ -16,7 +14,7 @@ pub(super) fn run_arb_bls<CTX>(
     gas_limit: u64,
 ) -> InterpreterResult
 where
-    CTX: ContextTr<Journal: JournalTr>,
+    CTX: ArbPrecompileCtx,
 {
     revert_result(gas_limit, "ArbBLS: no active methods")
 }
