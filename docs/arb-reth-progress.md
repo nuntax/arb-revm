@@ -54,8 +54,16 @@ Foundation de-risked by real `cargo check`: revm unifies at **36**, alloy at **1
   **Coherence note:** `impl<J: JournalTr> ArbJournal for J` (blanket, zero-churn) + the node impl forced
   a local `ArbInternals(&mut EvmInternals)` newtype (a direct `impl ArbJournal for EvmInternals` collides
   under E0119 — rustc can't prove the foreign type isn't `JournalTr`).
-- **D.2 node skeleton** — ⬜ not started (NodeTypes=ArbPrimitives, ArbChainSpec 42161, NodeBuilder, MDBX,
-  custom merkle stage → full mainnet header state-root + receipt-root parity).
+- **D.2 node skeleton** — 🟡 started. **High-level executor validated** (commit `217e2d4`): a block runs
+  through reth's generic `ConfigureEvm::executor(db).execute(&RecoveredBlock<ArbBlock>)` —
+  `BasicBlockExecutor` driving `apply_pre_execution_changes` (StartBlock InternalTx + EIP-2935) → tx
+  loop → `finish` → `BlockExecutionOutput`, all decoded from the header — value provably moves
+  (arb-reth-evm 11 tests). This is the reth execution entry the `NodeBuilder` sits on.
+  **Still to do:** `ArbChainSpec` (42161) + `ArbNodeTypes: NodeTypes` (pulls the reth node-stack deps);
+  `NodeBuilder` + component builders (Pool/Payload/Network/Consensus); MDBX persistence + merkle/trie
+  stages; **real mainnet block + receipt/state-root parity** (needs the `replay_block` witness pre-state
+  for ground truth — the genuine correctness proof, RPC-backed). The full-node pieces are large/plumbing;
+  the real-block root parity is the higher-value correctness milestone.
   **Node-path E2E validated** (commit `cd93392`): a tx calling `ArbSys.arbOSVersion()` (sloads the
   seeded `arbos_version` slot) through the `PrecompilesMap`/`EvmInternals` path matches the in-EVM
   `arb_revm` oracle bit-for-bit (output + gas) and returns `55+51` — proving the `ArbInternals`
