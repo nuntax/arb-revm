@@ -1,6 +1,8 @@
 use super::*;
-use crate::arb_journal::{ArbCall, ArbPrecompileCtx};
+use crate::arb_journal::{ArbCall, ArbJournal, ArbPrecompileCtx};
 use crate::storage::{pack_uint, stylus_param_layout as layout};
+use revm::interpreter::InstructionResult;
+use revm::primitives::{B256, Bytes, Log, keccak256};
 
 const FEATURE_ENABLE_DELAY_SECONDS: u64 = 7 * 24 * 60 * 60;
 const ARBOS_VERSION_PER_TX_GAS_LIMIT: u64 = 50;
@@ -46,7 +48,7 @@ where
         };
     }
 
-    match call {
+    let result = match call {
         ArbOwner::ArbOwnerCalls::addChainOwner(c) => {
             set_or_revert!(state.chain_owners.add(c.newOwner, j), "addChainOwner")
         }
@@ -652,5 +654,37 @@ where
                 "setMaxStylusContractFragments"
             )
         }
+    };
+
+    // Nitro wraps every successful, state-mutating ArbOwner method with an `OwnerActs` event
+    // (precompiles/precompile.go `emitOwnerActs` via `OwnerPrecompile.Call`): the event records the
+    // 4-byte method selector, the owner, and the full calldata. The owner is NOT charged gas for it
+    // (Nitro returns `ZeroGas`; our `ok_result` already records zero precompile gas). Without it the
+    // produced block's receipts/logs-bloom (and thus the block hash) diverge from Nitro on any
+    // owner action. `event OwnerActs(bytes4 indexed method, address indexed owner, bytes data)`.
+    if result.result == InstructionResult::Return && !call_inputs.is_static && input.len() >= 4 {
+        let mut method_topic = [0u8; 32];
+        method_topic[..4].copy_from_slice(&input[..4]);
+        let mut owner_topic = [0u8; 32];
+        owner_topic[12..].copy_from_slice(call_inputs.caller.as_slice());
+
+        // ABI-encode the single `bytes data` argument: offset (0x20) | length | content (32-padded).
+        let mut data = Vec::with_capacity(64 + input.len().next_multiple_of(32));
+        data.extend_from_slice(&U256::from(32u64).to_be_bytes::<32>());
+        data.extend_from_slice(&U256::from(input.len()).to_be_bytes::<32>());
+        data.extend_from_slice(input);
+        data.resize(64 + input.len().next_multiple_of(32), 0);
+
+        ctx.journal_mut().emit_log(Log::new_unchecked(
+            call_inputs.bytecode_address,
+            vec![
+                keccak256("OwnerActs(bytes4,address,bytes)"),
+                B256::from(method_topic),
+                B256::from(owner_topic),
+            ],
+            Bytes::from(data),
+        ));
     }
+
+    result
 }
