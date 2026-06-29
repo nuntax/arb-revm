@@ -155,6 +155,8 @@ struct TraceInsp {
     pending_call_target: Option<Address>,
     /// Linear (pc, opcode, gasCost) sequence for diffing against a Nitro structLog.
     linear: Vec<(usize, u8, u64)>,
+    /// Top-of-stack snapshot (BEFORE each op, geth structLog convention) for value diffs.
+    stacks: Vec<Vec<String>>,
 }
 
 impl<CTX> Inspector<CTX, EthInterpreter> for TraceInsp {
@@ -166,6 +168,11 @@ impl<CTX> Inspector<CTX, EthInterpreter> for TraceInsp {
             self.last_op = op;
             self.last_gas = interp.gas.remaining();
             self.last_pc = interp.bytecode.pc();
+            let data = interp.stack.data();
+            let n = data.len();
+            let top: Vec<String> =
+                data[n.saturating_sub(5)..].iter().rev().map(|v| format!("{v:#x}")).collect();
+            self.stacks.push(top);
         }
     }
 
@@ -830,8 +837,10 @@ async fn main() -> Result<()> {
         }
         let mut linear_out = String::new();
         for (i, (pc, op, gas)) in insp.linear.iter().enumerate() {
+            let stk = insp.stacks.get(i).map(|s| s.join(",")).unwrap_or_default();
+            let _ = &stk;
             let name = OpCode::new(*op).map(|o| o.as_str()).unwrap_or("?");
-            linear_out.push_str(&format!("{i:04} pc={pc} {name} gas={gas}\n"));
+            linear_out.push_str(&format!("{i:04} pc={pc} {name} gas={gas} stack=[{stk}]\n"));
         }
         std::fs::write("/tmp/our_trace.txt", &linear_out).ok();
         println!("wrote {} steps to /tmp/our_trace.txt", insp.linear.len());

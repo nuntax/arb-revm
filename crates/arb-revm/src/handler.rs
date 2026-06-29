@@ -926,6 +926,70 @@ where
     ERROR: EvmTrError<EVM> + FromStringError,
 {
     type IT = EthInterpreter;
+
+    /// Mirror [`ArbHandler::execution`] (protocol short-circuits + poster/hold gas
+    /// reservation) but drive the **inspecting** frame loop. The default
+    /// `inspect_execution` skips the poster-gas reservation, so the inspector path would
+    /// otherwise leave `posterGas` in the EVM gas pool — inflating the `GAS` opcode and
+    /// diverging gas-sensitive contracts from the non-inspect `transact` path.
+    fn inspect_execution(
+        &mut self,
+        evm: &mut Self::Evm,
+        init_and_floor_gas: &InitialAndFloorGas,
+    ) -> Result<FrameResult, Self::Error> {
+        if is_internal_tx(evm) {
+            internal_tx::apply_internal_tx(evm.ctx_mut())
+                .map_err(|msg| ERROR::from_string(msg.into()))?;
+            return Ok(internal_success_frame_result());
+        }
+        if is_deposit_tx(evm) {
+            deposit_tx::apply_deposit_tx(evm.ctx_mut())
+                .map_err(|msg| ERROR::from_string(msg.into()))?;
+            return Ok(internal_success_frame_result());
+        }
+        if is_submit_retryable_tx(evm) {
+            let outcome = submit_retryable_tx::apply_submit_retryable_tx(evm.ctx_mut())
+                .map_err(|msg| ERROR::from_string(msg.into()))?;
+            return Ok(match outcome {
+                submit_retryable_tx::SubmitRetryableOutcome::Created => {
+                    submit_retryable_success_frame_result(evm.ctx().tx().gas_limit())
+                }
+                submit_retryable_tx::SubmitRetryableOutcome::Failed => {
+                    submit_retryable_failed_frame_result()
+                }
+            });
+        }
+        if is_retry_tx(evm) {
+            retry_tx::apply_retry_tx_pre_execution(evm.ctx_mut())
+                .map_err(|msg| ERROR::from_string(msg.into()))?;
+        }
+
+        // poster_gas/hold_gas are 0 for retry txs (they bypass the GasChargingHook), so the
+        // same reservation formula covers them; reservoir is 0 at our specs (no EIP-7623).
+        let (tx_gas_limit, poster_gas, hold_gas) = {
+            let ctx = evm.ctx();
+            (ctx.tx().gas_limit(), ctx.chain().poster_gas, ctx.chain().hold_gas)
+        };
+        let total_initial = init_and_floor_gas
+            .initial_total_gas()
+            .saturating_add(poster_gas)
+            .saturating_add(hold_gas);
+        if total_initial > tx_gas_limit {
+            return Err(InvalidTransaction::CallGasCostMoreThanGasLimit {
+                initial_gas: total_initial,
+                gas_limit: tx_gas_limit,
+            }
+            .into());
+        }
+
+        let first_frame_input = self
+            .mainnet
+            .first_frame_input(evm, tx_gas_limit.saturating_sub(total_initial), 0)?;
+        let mut frame_result = self.inspect_run_exec_loop(evm, first_frame_input)?;
+        self.mainnet.last_frame_result(evm, 0, &mut frame_result)?;
+        frame_result.gas_mut().erase_cost(hold_gas);
+        Ok(frame_result)
+    }
 }
 
 #[cfg(test)]
