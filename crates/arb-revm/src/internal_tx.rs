@@ -150,6 +150,20 @@ fn apply_start_block<CTX: ArbContextTr>(ctx: &mut CTX, input: &Bytes) -> Result<
             .map_err(|err| format!("[ARBITRUM] failed to record ArbOS L1 block hash: {err}"))?;
     }
 
+    // The `NUMBER` opcode returns the ArbOS-state L1 block number (Nitro's patched
+    // `opNumber` reads `ProcessingHook.L1BlockNumber`, which is exactly this stored value
+    // *after* the start-block update), not the raw message block number. That distinction
+    // matters because the stored value is monotonic and, for ArbOS < 8, one higher than the
+    // message's number (the `l1_block_number++` above). The block-scoped chain context still
+    // carries the raw message value the driver/replay seeded it with, so refresh it from the
+    // post-update ArbOS state here; every user tx in this block then sees the correct
+    // `NUMBER`. Without this, a tx that reads/stores `NUMBER` diverges from canonical (first
+    // observed at Arb One block 22207832).
+    let new_l1_block_number = arbos_state
+        .block_hashes
+        .l1_block_number(journal)
+        .map_err(|err| format!("[ARBITRUM] failed to read updated ArbOS L1 block number: {err}"))?;
+
     // Nitro reaps up to two retryables during StartBlock.
     let _ = arbos_state
         .retryables
@@ -184,6 +198,11 @@ fn apply_start_block<CTX: ArbContextTr>(ctx: &mut CTX, input: &Bytes) -> Result<
         )
         .map_err(|err| format!("[ARBITRUM] ArbOS version upgrade failed: {err}"))?;
     }
+
+    // Refresh the block-scoped L1 block number now that the journal borrow is released, so
+    // the `NUMBER` opcode (which reads `chain().l1_block_number`) returns the post-update
+    // ArbOS-state value for the rest of this block's transactions.
+    ctx.chain_mut().l1_block_number = new_l1_block_number;
 
     Ok(())
 }
