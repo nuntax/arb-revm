@@ -2,7 +2,6 @@ use crate::{
     api::exec::ArbContextTr,
     storage::{ArbosState, StorageSlot},
 };
-use arb_alloy_precompiles::addresses::ARB_NATIVE_TOKEN_MANAGER;
 use revm::{
     Database as _,
     context_interface::{Block, ContextTr, JournalTr, Transaction, journaled_state::account::JournaledAccountTr},
@@ -361,17 +360,9 @@ pub(crate) fn upgrade_arbos_version<J: JournalTr>(
                     .write_params_word(params_word, journal)
                     .map_err(|e| format!("[ARBITRUM] failed to write Stylus params: {e}"))?;
             }
-            // v41: install the ArbNativeTokenManager (0x73) precompile account. Nitro
-            // arbosState.go UpgradeArbosVersion installs `[INVALID]` (0xfe) code for every
-            // precompile whose MinArbOSVersion == the version being activated, giving the
-            // account a non-empty code hash in the trie. ArbNativeTokenManager activates at
-            // v41 (ArbFilteredTransactionsManager at 0x74 activates at v60 — handled there).
-            41 => {
-                journal
-                    .load_account_mut(ARB_NATIVE_TOKEN_MANAGER)
-                    .map_err(|e| format!("[ARBITRUM] failed to load ArbNativeTokenManager: {e}"))?;
-                journal.set_code(ARB_NATIVE_TOKEN_MANAGER, Bytecode::new_raw(vec![0xfe].into()));
-            }
+            // v41: no state changes beyond the precompile install below (ArbNativeTokenManager
+            // 0x73 activates here; installed by `install_precompiles_introduced_at`).
+            41 => {}
             // v42-v49: reserved for Orbit chains.
             42..=49 => {}
             // v50: set per-tx gas limit; Stylus param upgrade handled by runtime.
@@ -425,6 +416,11 @@ pub(crate) fn upgrade_arbos_version<J: JournalTr>(
                 ));
             }
         }
+
+        // Install any precompiles introduced at this version, matching Nitro's per-step
+        // "install any new precompiles" loop. Without this a runtime upgrade to v30 leaves the
+        // Stylus precompiles (0x71/0x72) with an empty code hash and diverges the state root.
+        crate::arbos_init::install_precompiles_introduced_at(version, journal)?;
 
         // Persist the incremented version after each successful step.
         let _ = state.arbos_version.set(version, journal);
