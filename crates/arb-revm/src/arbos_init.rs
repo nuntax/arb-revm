@@ -388,6 +388,30 @@ const ARBOS_PRECOMPILES: &[(Address, u64, bool)] = &[
     (ARBOS_ACTS_ADDRESS, 0, false),                                      // ArbosActs (0xa4b05)
 ];
 
+/// Install `[INVALID]` code for every non-debug precompile introduced at exactly `version`.
+///
+/// Mirrors Nitro's per-step "install any new precompiles" loop in `UpgradeArbosVersion`
+/// (`for addr, v := range PrecompileMinArbOSVersions { if v == nextArbosVersion { SetCode(..) } }`),
+/// so a runtime upgrade to a version that adds a precompile gives that account a non-empty code
+/// hash in the trie: v30 ArbWasm/ArbWasmCache (0x71/0x72), v41 ArbNativeTokenManager (0x73), v60
+/// ArbFilteredTransactionsManager (0x74). Debug precompiles are version 0 and never introduced
+/// mid-chain, so they are skipped here (genesis installs them per `debug_precompiles`). At genesis
+/// this re-installs what the bulk pass already wrote, which is idempotent.
+pub(crate) fn install_precompiles_introduced_at<J: JournalTr>(
+    version: u64,
+    journal: &mut J,
+) -> Result<(), String> {
+    for (addr, min_version, debug_only) in ARBOS_PRECOMPILES {
+        if *min_version == version && !*debug_only {
+            journal
+                .load_account_mut(*addr)
+                .map_err(|e| format!("[ARBITRUM] failed to load precompile account {addr}: {e}"))?;
+            journal.set_code(*addr, Bytecode::new_raw(PRECOMPILE_FAKE_CODE.to_vec().into()));
+        }
+    }
+    Ok(())
+}
+
 /// Parameters for genesis ArbOS initialization, derived from the chain's `Initialize` message
 /// (Nitro `arbostypes.ParsedInitMessage` + `params.ChainConfig.ArbitrumChainParams`).
 #[derive(Debug, Clone)]
