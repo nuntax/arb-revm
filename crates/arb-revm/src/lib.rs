@@ -5,6 +5,10 @@
 //! Nitro-faithful execution remains a separate layer because it depends heavily
 //! on global node state and runtime data that do not belong in a portable storage crate.
 
+// Re-export the vendored brotli crate so downstream crates (arb-reth-derive) share the single
+// brotli source and avoid a lockfile collision. BUSL-licensed; see the NOTICE.
+pub use brotli;
+
 pub mod api;
 pub mod arb_journal;
 pub mod arbos_init;
