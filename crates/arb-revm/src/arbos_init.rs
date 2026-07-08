@@ -365,8 +365,9 @@ const PRECOMPILE_FAKE_CODE: [u8; 1] = [0xfe];
 /// `[INVALID]` code so its account has a non-empty code hash in the trie. Addresses from
 /// `go-ethereum/core/types/arbitrum_signer.go`.
 ///
-/// `(address, min_arbos_version, debug_only)`, `debug_only` precompiles (ArbDebug) are installed
-/// only when `debug_precompiles` is requested.
+/// `(address, min_arbos_version, debug_only)`. `debug_only` marks call-time-gated precompiles
+/// (ArbDebug); it does NOT affect the genesis install, which mirrors Nitro's version-0 loop and
+/// installs every `min_version <= initial_arbos_version` entry, ArbDebug included.
 const ARBOS_PRECOMPILES: &[(Address, u64, bool)] = &[
     (address!("0x0000000000000000000000000000000000000064"), 0, false), // ArbSys
     (address!("0x0000000000000000000000000000000000000065"), 0, false), // ArbInfo
@@ -395,7 +396,7 @@ const ARBOS_PRECOMPILES: &[(Address, u64, bool)] = &[
 /// so a runtime upgrade to a version that adds a precompile gives that account a non-empty code
 /// hash in the trie: v30 ArbWasm/ArbWasmCache (0x71/0x72), v41 ArbNativeTokenManager (0x73), v60
 /// ArbFilteredTransactionsManager (0x74). Debug precompiles are version 0 and never introduced
-/// mid-chain, so they are skipped here (genesis installs them per `debug_precompiles`). At genesis
+/// mid-chain, so they are skipped here (genesis already installs them unconditionally). At genesis
 /// this re-installs what the bulk pass already wrote, which is idempotent.
 pub(crate) fn install_precompiles_introduced_at<J: JournalTr>(
     version: u64,
@@ -428,7 +429,8 @@ pub struct ArbosInitConfig {
     pub initial_l1_base_fee: U256,
     /// `initMessage.SerializedChainConfig` (stored verbatim in the chainConfig subspace).
     pub serialized_chain_config: Vec<u8>,
-    /// Whether the chain registers debug precompiles (installs ArbDebug code at genesis).
+    /// Whether the chain allows debug-precompile *calls* (ArbDebug). Does not affect genesis state:
+    /// Nitro installs every version-0 precompile's code at genesis, ArbDebug included, unconditionally.
     pub debug_precompiles: bool,
 }
 
@@ -459,16 +461,18 @@ pub fn initialize_arbos_state<J: JournalTr>(
         .data
         .set_nonce(1);
 
-    // 1. Fake precompile code for every precompile active at the target version. Nitro installs
-    //    version-0 ones in InitializeArbosState and later ones during each UpgradeArbosVersion
+    // 1. Fake precompile code for every precompile active at the target version. Nitro's genesis
+    //    loop (arbosState.go:234) installs `[INVALID]` code for every entry in
+    //    PrecompileMinArbOSVersions with version == 0, and later ones during each UpgradeArbosVersion
     //    step; the final state (all precompiles with min_version <= target have code) is identical,
     //    so we install them in one pass here. (The upgrader also re-installs 0x73 at v41, the
     //    repeated SetCode is idempotent.)
-    for (addr, min_version, debug_only) in ARBOS_PRECOMPILES {
+    //
+    //    ArbDebug (0xff) is included unconditionally: it is a version-0 entry in Nitro's map (the
+    //    `debugOnly` wrapper only gates *calls*, not the genesis code install), so every chain,
+    //    mainnet included, carries a 0xff account with [INVALID] code in its genesis trie.
+    for (addr, min_version, _debug_only) in ARBOS_PRECOMPILES {
         if *min_version > config.initial_arbos_version {
-            continue;
-        }
-        if *debug_only && !config.debug_precompiles {
             continue;
         }
         journal
@@ -769,12 +773,15 @@ mod tests {
             "ArbWasm must not be installed below v30"
         );
 
-        // ArbDebug (debug-only) is NOT installed when debug_precompiles = false.
+        // ArbDebug (0xff) is a version-0 precompile in Nitro's map, so genesis installs its
+        // [INVALID] code unconditionally (the debug gate is call-time only). Every chain, mainnet
+        // included, carries a 0xff account with fake code in its genesis trie.
         let arb_debug = address!("0x00000000000000000000000000000000000000ff");
         let acct = j.load_account(arb_debug).unwrap();
-        assert!(
-            acct.data.info.code.clone().unwrap_or_default().is_empty(),
-            "ArbDebug must not be installed without debug_precompiles"
+        assert_eq!(
+            acct.data.info.code.clone().unwrap_or_default().original_byte_slice(),
+            &PRECOMPILE_FAKE_CODE,
+            "ArbDebug (0xff) must be installed at genesis on every chain"
         );
     }
 
