@@ -89,6 +89,7 @@ where
                 .ok()?;
             let params = StylusParams::from_word(&params_word);
             let arbos_version = ctx.cfg().spec().arbos_version();
+            let debug = ArbosState::open().debug_mode(ctx.journal_mut());
 
             // Stored program metadata, Nitro's source of truth for init/page gas, set at
             // activation. We still compile/activate below for the executable module, but charge
@@ -99,7 +100,7 @@ where
                 .ok()?;
 
             // Fetch (or compile+activate, caching) the native module.
-            let compile_config = CompileConfig::version(params.version, false);
+            let compile_config = CompileConfig::version(params.version, debug);
             let serialized = {
                 let mut cache = PROGRAM_CACHE.lock().unwrap();
                 match cache.try_get_or_insert::<_, String>(code_hash, || {
@@ -111,7 +112,7 @@ where
                         arbos_version as u16,
                         params.version,
                         params.page_limit,
-                        false,
+                        debug,
                     )?;
                     Ok((serialized, module, data))
                 }) {

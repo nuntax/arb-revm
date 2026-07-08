@@ -118,6 +118,26 @@ impl ArbosState {
     /// loads the committed values straight from the underlying state), so the send-Merkle
     /// root/size, the (possibly upgraded) ArbOS version, and the L2 base fee all reflect the
     /// finalized block, exactly the inputs Nitro feeds into the block header.
+    /// Whether the chain runs in debug mode (Nitro `ChainConfig.DebugMode()` =
+    /// `arbitrum.AllowDebugPrecompiles`). Read from the stored chain-config JSON; arb_revm storage
+    /// reads are free, matching Nitro reading it off the in-memory chain config (no gas). Stylus
+    /// activation + execution instrument differently under debug, so this must key those paths.
+    pub fn debug_mode<J: ArbJournal>(&self, journal: &mut J) -> bool {
+        let bytes = match self.chain_config.get(journal) {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+        let value: serde_json::Value = match serde_json::from_slice(&bytes) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        value
+            .get("arbitrum")
+            .and_then(|a| a.get("AllowDebugPrecompiles"))
+            .and_then(|d| d.as_bool())
+            .unwrap_or(false)
+    }
+
     pub fn read_block_header_info<J: ArbJournal>(
         journal: &mut J,
     ) -> eyre::Result<ArbBlockHeaderInfo> {

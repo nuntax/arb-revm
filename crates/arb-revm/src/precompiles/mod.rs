@@ -185,7 +185,7 @@ impl ArbPrecompilesEnum {
             Self::ArbRetryableTx => run_arb_retryable_tx(ctx, raw, gas_limit, call),
             Self::ArbStatistics => run_arb_statistics(ctx, raw, gas_limit),
             Self::ArbOwner => run_arb_owner(ctx, raw, gas_limit, call),
-            Self::ArbWasm => run_arb_wasm(ctx, raw, gas_limit),
+            Self::ArbWasm => run_arb_wasm(ctx, raw, gas_limit, call),
             Self::ArbWasmCache => run_arb_wasm_cache(ctx, raw, gas_limit, call),
             Self::ArbNativeTokenManager => run_arb_native_token_manager(ctx, raw, gas_limit),
             Self::ArbFilteredTransactionsManager => {

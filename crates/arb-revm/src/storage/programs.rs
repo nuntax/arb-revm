@@ -1,7 +1,7 @@
 use eyre::Result;
 use revm::{
     context_interface::{context::SStoreResult, journaled_state::StateLoad},
-    primitives::{B256, U256},
+    primitives::{B256, FixedBytes, U256},
 };
 
 use super::{AddressSet, StorageBacked, StorageSpace};
@@ -268,6 +268,81 @@ impl ArbosPrograms {
         })
     }
 
+    /// Writes the activation metadata for a Stylus program, keyed by `code_hash` (Nitro
+    /// `setProgram`). Packs the 32-byte word exactly as `read_program` unpacks it.
+    pub fn write_program<J: ArbJournal>(
+        &self,
+        code_hash: B256,
+        info: &ProgramInfo,
+        journal: &mut J,
+    ) -> Result<StateLoad<SStoreResult>> {
+        let mut word = [0u8; 32];
+        word[0..2].copy_from_slice(&info.version.to_be_bytes());
+        word[2..4].copy_from_slice(&info.init_cost.to_be_bytes());
+        word[4..6].copy_from_slice(&info.cached_cost.to_be_bytes());
+        word[6..8].copy_from_slice(&info.footprint.to_be_bytes());
+        pack_uint(&mut word, 8, 3, info.activated_at);
+        pack_uint(&mut word, 11, 3, info.asm_estimate_kb);
+        word[14] = info.cached as u8;
+        self.program_data
+            .set(FixedBytes::from(code_hash.0), U256::from_be_bytes(word), journal)
+            .map_err(|e| eyre::eyre!("Stylus program write error: {e}"))
+    }
+
+    /// Writes the activated module hash keyed by `code_hash` (Nitro `moduleHashes.Set`).
+    pub fn write_module_hash<J: ArbJournal>(
+        &self,
+        code_hash: B256,
+        module_hash: B256,
+        journal: &mut J,
+    ) -> Result<StateLoad<SStoreResult>> {
+        self.module_hashes
+            .set(
+                FixedBytes::from(code_hash.0),
+                U256::from_be_bytes(module_hash.0),
+                journal,
+            )
+            .map_err(|e| eyre::eyre!("Stylus module hash write error: {e}"))
+    }
+
+    /// Advances the data-pricer demand model by `temp_bytes` at `time` and returns the activation
+    /// data fee in wei. Byte-for-byte port of Nitro `DataPricer.UpdateModel`
+    /// (arbos/programs/data_pricer.go): credits elapsed refill against demand, adds the new bytes,
+    /// persists demand + last-update time, then prices the bytes through an exponential curve.
+    pub fn update_data_model<J: ArbJournal>(
+        &self,
+        temp_bytes: u32,
+        time: u64,
+        journal: &mut J,
+    ) -> Result<U256> {
+        let demand = self.data_pricer.demand.get(journal)?;
+        let bytes_per_second = self.data_pricer.bytes_per_second.get(journal)?;
+        let last_update_time = self.data_pricer.last_update_time.get(journal)?;
+        let min_price = self.data_pricer.min_price.get(journal)?;
+        let inertia = self.data_pricer.inertia.get(journal)?;
+
+        let passed = u32::try_from(time.saturating_sub(last_update_time)).unwrap_or(u32::MAX);
+        let credit = bytes_per_second.saturating_mul(passed);
+        let demand = demand.saturating_sub(credit).saturating_add(temp_bytes);
+
+        self.data_pricer.demand.set(demand, journal)?;
+        self.data_pricer.last_update_time.set(time, journal)?;
+
+        let exponent = if inertia == 0 {
+            0
+        } else {
+            (ONE_IN_BIPS * demand as i64) / inertia as i64
+        };
+        let multiplier = approx_exp_basis_points(exponent, 12);
+        let cost_per_byte = if multiplier < 0 {
+            0
+        } else {
+            (min_price as u64).saturating_mul(multiplier as u64) / ONE_IN_BIPS as u64
+        };
+        let cost_in_wei = cost_per_byte.saturating_mul(temp_bytes as u64);
+        Ok(U256::from(cost_in_wei))
+    }
+
     /// Writes a packed 32-byte Stylus params word back to storage index 0.
     pub fn write_params_word<J: ArbJournal>(
         &self,
@@ -335,6 +410,26 @@ pub fn pack_uint(word: &mut [u8; 32], start: usize, len: usize, value: u32) {
     debug_assert!(len <= 4 && start + len <= 32);
     let buf = value.to_be_bytes();
     word[start..start + len].copy_from_slice(&buf[4 - len..]);
+}
+
+/// One unit denominated in basis points (Nitro `arbmath.OneInBips`).
+const ONE_IN_BIPS: i64 = 10_000;
+
+/// Maclaurin/Horner approximation of `b * e^(x/b)` in basis points (Nitro
+/// `arbmath.ApproxExpBasisPoints`). Used by the data pricer's exponential fee curve.
+fn approx_exp_basis_points(value: i64, accuracy: u64) -> i64 {
+    let negative = value < 0;
+    let x = if negative { -value } else { value } as u64;
+    let base = ONE_IN_BIPS as u64;
+    let mut result = base + x / accuracy;
+    for i in (1..accuracy).rev() {
+        result = base + result.saturating_mul(x) / (i * base);
+    }
+    if negative {
+        ((base * base) / result).min(i64::MAX as u64) as i64
+    } else {
+        result.min(i64::MAX as u64) as i64
+    }
 }
 
 // ---------------------------------------------------------------------------
