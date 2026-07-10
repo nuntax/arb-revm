@@ -360,6 +360,11 @@ pub trait ArbPrecompileCtx {
     /// Transaction chain id (`tx.chain_id()`), `None` for pre-EIP-155 txs.
     fn tx_chain_id(&self) -> Option<u64>;
 
+    /// EIP-2718 type byte of the top-level transaction (`tx.tx_type()`). Arbitrum-typed txs keep
+    /// their type here (e.g. `0x68` ArbitrumRetryTx). Used by `ArbSys`'s aliasing methods, which
+    /// only alias when the top tx type is one Nitro's `DoesTxTypeAlias` accepts.
+    fn top_tx_type(&self) -> u8;
+
     /// Hash of historical block `number` (revm `Host::block_hash`), `None` if out of range.
     /// Used by `ArbSys.arbBlockHash`.
     fn block_hash(&mut self, number: u64) -> Option<B256>;
@@ -398,6 +403,10 @@ where
 
     fn tx_chain_id(&self) -> Option<u64> {
         self.tx().chain_id()
+    }
+
+    fn top_tx_type(&self) -> u8 {
+        self.tx().tx_type()
     }
 
     fn block_hash(&mut self, number: u64) -> Option<B256> {
@@ -475,6 +484,10 @@ impl<'a, 'b> ArbPrecompileCtx for ArbNodeCtx<'a, 'b> {
 
     fn tx_chain_id(&self) -> Option<u64> {
         self.journal.0.tx_env().chain_id()
+    }
+
+    fn top_tx_type(&self) -> u8 {
+        self.journal.0.tx_env().tx_type()
     }
 
     fn block_hash(&mut self, number: u64) -> Option<B256> {

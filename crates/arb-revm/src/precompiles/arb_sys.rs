@@ -92,22 +92,29 @@ where
             }
         }
         ArbSys::ArbSysCalls::wasMyCallersAddressAliased(_) => {
-            // An address was aliased if its inverse-remap differs from the L2 address.
-            let caller = call_inputs.caller;
-            let is_aliased = inverse_remap_l1_address(caller)
-                .map(|unaliased| unaliased != caller)
-                .unwrap_or(false);
+            let aliased = caller_was_aliased(ctx);
             ok_result(
                 gas_limit,
-                alloy_core::sol_types::SolValue::abi_encode(&(is_aliased,)),
+                alloy_core::sol_types::SolValue::abi_encode(&(aliased,)),
             )
         }
         ArbSys::ArbSysCalls::myCallersAddressWithoutAliasing(_) => {
-            let caller = call_inputs.caller;
-            let unaliased = inverse_remap_l1_address(caller).unwrap_or(caller);
+            // Nitro (ArbSys.go): address = Contracts[depth-2].Caller() (the caller of the frame
+            // that called ArbSys), inverse-remapped iff that caller was aliased. Aliasing only
+            // applies at the top level (depth <= 2), and there the grandparent caller IS the
+            // transaction origin, so `tx_caller` reconstructs the address on both the in-EVM and
+            // node paths (the latter carries no call stack). Deeper frames would need the real
+            // stack, but there `caller_was_aliased` is false and a `wasMyCallersAddressAliased`-
+            // gated contract never trusts the raw value, so origin is a safe stand-in.
+            let base = ctx.tx_caller();
+            let out = if caller_was_aliased(ctx) {
+                inverse_remap_l1_address(base).unwrap_or(base)
+            } else {
+                base
+            };
             ok_result(
                 gas_limit,
-                alloy_core::sol_types::SolValue::abi_encode(&(unaliased,)),
+                alloy_core::sol_types::SolValue::abi_encode(&(out,)),
             )
         }
         ArbSys::ArbSysCalls::sendMerkleTreeState(_) => {
@@ -297,6 +304,21 @@ where
     result
 }
 
+/// Whether ArbSys's caller was an aliased L1 address, mirroring Nitro's `WasMyCallersAddressAliased`
+/// (ArbSys.go): `isTopLevel && DoesTxTypeAlias(TopTxType)`. `isTopLevel` reduces to `depth <= 2`
+/// (the frame that called ArbSys was itself invoked directly by the tx), the same predicate
+/// `IsTopLevelCall` uses.
+fn caller_was_aliased<CTX: ArbPrecompileCtx>(ctx: &CTX) -> bool {
+    ctx.call_depth() <= 2 && does_tx_type_alias(ctx.top_tx_type())
+}
+
+/// Nitro `util.DoesTxTypeAlias`: only L1-originated tx types alias their sender.
+#[inline]
+fn does_tx_type_alias(tx_type: u8) -> bool {
+    // ArbitrumUnsignedTx (0x65), ArbitrumContractTx (0x66), ArbitrumRetryTx (0x68).
+    matches!(tx_type, 0x65 | 0x66 | 0x68)
+}
+
 #[inline]
 fn u256_to_b256(value: U256) -> B256 {
     B256::from(value.to_be_bytes::<32>())
@@ -307,4 +329,21 @@ fn address_to_topic(address: Address) -> B256 {
     let mut padded = [0_u8; 32];
     padded[12..].copy_from_slice(address.as_slice());
     B256::from(padded)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::does_tx_type_alias;
+
+    #[test]
+    fn tx_type_alias_table_matches_nitro() {
+        // Nitro util.DoesTxTypeAlias: only these L1-originated types alias their sender.
+        assert!(does_tx_type_alias(0x65)); // ArbitrumUnsignedTx
+        assert!(does_tx_type_alias(0x66)); // ArbitrumContractTx
+        assert!(does_tx_type_alias(0x68)); // ArbitrumRetryTx
+        // Everything else does not alias.
+        for ty in [0x00, 0x01, 0x02, 0x03, 0x64, 0x67, 0x69, 0x6a, 0x6b, 0xff] {
+            assert!(!does_tx_type_alias(ty), "type {ty:#x} must not alias");
+        }
+    }
 }
