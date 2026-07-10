@@ -7,7 +7,7 @@ where
 {
     let call = match ArbInfo::ArbInfoCalls::abi_decode(input) {
         Ok(c) => c,
-        Err(e) => return revert_result(gas_limit, &format!("ArbInfo: invalid calldata: {e}")),
+        Err(_) => return gated_revert_result(gas_limit),
     };
 
     match call {

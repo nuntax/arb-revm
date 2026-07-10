@@ -7,7 +7,7 @@ where
 {
     let call = match ArbDebug::ArbDebugCalls::abi_decode(input) {
         Ok(c) => c,
-        Err(e) => return revert_result(gas_limit, &format!("ArbDebug: invalid calldata: {e}")),
+        Err(_) => return gated_revert_result(gas_limit),
     };
 
     // ArbDebug is only available on debug/dev nodes.  All methods revert in

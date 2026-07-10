@@ -15,7 +15,7 @@ where
 {
     let call = match ArbGasInfo::ArbGasInfoCalls::abi_decode(input) {
         Ok(c) => c,
-        Err(e) => return revert_result(gas_limit, &format!("ArbGasInfo: invalid calldata: {e}")),
+        Err(_) => return gated_revert_result(gas_limit),
     };
 
     let state = ArbosState::open();

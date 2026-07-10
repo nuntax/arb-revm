@@ -49,10 +49,7 @@ where
 {
     let call = match ArbRetryableTx::ArbRetryableTxCalls::abi_decode(input) {
         Ok(c) => c,
-        Err(e) => {
-            return revert_result(gas_limit, &format!("ArbRetryableTx: invalid calldata: {e}"));
-        }
-    };
+        Err(_) => return gated_revert_result(gas_limit),};
 
     let state = ArbosState::open();
 
