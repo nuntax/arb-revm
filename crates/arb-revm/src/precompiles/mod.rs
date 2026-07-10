@@ -193,7 +193,7 @@ impl ArbPrecompilesEnum {
             Self::ArbFunctionTable => run_arb_function_table(ctx, raw, gas_limit),
             Self::ArbOwnerPublic => run_arb_owner_public(ctx, raw, gas_limit),
             Self::ArbGasInfo => run_arb_gas_info(ctx, raw, gas_limit),
-            Self::ArbAggregator => run_arb_aggregator(ctx, raw, gas_limit),
+            Self::ArbAggregator => run_arb_aggregator(ctx, raw, gas_limit, call),
             Self::ArbRetryableTx => run_arb_retryable_tx(ctx, raw, gas_limit, call),
             Self::ArbStatistics => run_arb_statistics(ctx, raw, gas_limit),
             Self::ArbOwner => run_arb_owner(ctx, raw, gas_limit, call),

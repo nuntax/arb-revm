@@ -1,11 +1,12 @@
 use super::*;
-use crate::arb_journal::ArbPrecompileCtx;
+use crate::arb_journal::{ArbCall, ArbPrecompileCtx};
 use crate::constants::BATCH_POSTER_ADDRESS;
 
 pub(super) fn run_arb_aggregator<CTX>(
     ctx: &mut CTX,
     input: &[u8],
     gas_limit: u64,
+    arb_call: &ArbCall,
 ) -> InterpreterResult
 where
     CTX: ArbPrecompileCtx,
@@ -68,7 +69,9 @@ where
             alloy_core::sol_types::SolValue::abi_encode(&(U256::ZERO,)),
         ),
         ArbAggregator::ArbAggregatorCalls::addBatchPoster(c) => {
-            let caller = ctx.tx_caller();
+            // Nitro checks `c.caller`, the immediate CALL caller (msg.sender of the precompile
+            // call), NOT the tx origin. Through a proxy/delegatecall these differ.
+            let caller = arb_call.caller;
             let caller_is_owner = match state.chain_owners.is_member(caller, ctx.journal_mut()) {
                 Ok(v) => v,
                 Err(e) => {
@@ -122,7 +125,8 @@ where
                 Ok(a) => a,
                 Err(e) => return revert_result(gas_limit, &format!("ArbAggregator: error: {e}")),
             };
-            let caller = ctx.tx_caller();
+            // Nitro checks `c.caller`, the immediate CALL caller, not the tx origin.
+            let caller = arb_call.caller;
             if caller != c.batchPoster && caller != old_fee_collector {
                 let caller_is_owner = match state.chain_owners.is_member(caller, ctx.journal_mut())
                 {
