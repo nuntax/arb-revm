@@ -39,10 +39,14 @@ pub const INITIAL_KEEPALIVE_DAYS: u32 = 31;
 pub const INITIAL_BLOCK_CACHE_SIZE: u32 = 32;
 /// Max decompressed WASM size in bytes (stored only for ArbOS ≥ 40). Nitro: `initialMaxWasmSize`.
 pub const INITIAL_MAX_WASM_SIZE: u32 = 128 * 1_024; // 131072
-/// Max fragment count (stored only for ArbOS ≥ 60 / StylusContractLimit). Nitro: `initialMaxFragmentCount`.
-pub const INITIAL_MAX_FRAGMENT_COUNT: u32 = 2;
+/// Max fragment count (stored only for ArbOS ≥ 60 / StylusContractLimit). Nitro: `initialMaxFragmentCount = 4`.
+pub const INITIAL_MAX_FRAGMENT_COUNT: u32 = 4;
+/// Nitro `arbOS60MaxWasmSize` (256 KB): MaxWasmSize after the ArbOS-60 StylusContractLimit upgrade.
+pub const ARBOS60_MAX_WASM_SIZE: u32 = 256 * 1_024; // 262144
 /// Stylus params version after v31 upgrade. Nitro: `v2MinInitGas` bump companion.
 pub const V2_STYLUS_VERSION: u32 = 2;
+/// Stylus params version after Nitro's ArbOS-59 `UpgradeToVersion(3)` (only the version field changes).
+pub const V3_STYLUS_VERSION: u32 = 3;
 /// Revised minimum initialization gas used from ArbOS v31 onward (128-gas increments).
 /// Nitro: `v2MinInitGas = 69` (→ 69 × 128 = 8832 gas; cachedGas is added on top from v2).
 pub const V2_MIN_INIT_GAS: u32 = 69;
@@ -559,10 +563,12 @@ mod tests {
 
         let word = state.programs.read_params_word(j).expect("read params word");
         use stylus_param_layout as l;
-        assert_eq!(unpack_uint(&word, l::MAX_FRAGMENT_COUNT.0, l::MAX_FRAGMENT_COUNT.1), 2, "MaxFragmentCount must be 2 at v60");
+        // A v60 genesis runs the full upgrade cascade (firstTime), incl. v59 UpgradeToVersion(3)
+        // and v60 UpgradeToArbosVersion(60): MaxWasmSize -> 256 KB, MaxFragmentCount -> 4.
+        assert_eq!(unpack_uint(&word, l::MAX_FRAGMENT_COUNT.0, l::MAX_FRAGMENT_COUNT.1), 4, "MaxFragmentCount must be 4 at v60");
         assert_eq!(unpack_uint(&word, l::MAX_STACK_DEPTH.0, l::MAX_STACK_DEPTH.1), 22_000, "MaxStackDepth capped at 22000");
-        assert_eq!(unpack_uint(&word, l::MAX_WASM_SIZE.0, l::MAX_WASM_SIZE.1), 131_072, "MaxWasmSize 131072");
-        assert_eq!(unpack_uint(&word, l::VERSION.0, l::VERSION.1), 2, "Version 2");
+        assert_eq!(unpack_uint(&word, l::MAX_WASM_SIZE.0, l::MAX_WASM_SIZE.1), 262_144, "MaxWasmSize 262144 (256 KB) at v60");
+        assert_eq!(unpack_uint(&word, l::VERSION.0, l::VERSION.1), 3, "Version 3 (v59 UpgradeToVersion(3))");
         assert_eq!(unpack_uint(&word, l::MIN_INIT_GAS.0, l::MIN_INIT_GAS.1), 69, "MinInitGas 69");
     }
 }

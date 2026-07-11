@@ -43,6 +43,8 @@ pub enum ArbSpecId {
     ARBOS_50 = 50,
     ARBOS_51 = 51,
     ARBOS_60 = 60,
+    /// "MultiGasRefundFix" (multi-dimensional gas bug fixes). Osaka-era, same EVM rules as 50-60.
+    ARBOS_61 = 61,
 }
 
 impl ArbSpecId {
@@ -95,7 +97,9 @@ impl ArbSpecId {
             41..=49 => Self::ARBOS_41,
             50 => Self::ARBOS_50,
             51..=59 => Self::ARBOS_51,
-            _ => Self::ARBOS_60,
+            60 => Self::ARBOS_60,
+            // 61 and any later unknown version clamp to the latest known (ARBOS_61).
+            _ => Self::ARBOS_61,
         }
     }
 

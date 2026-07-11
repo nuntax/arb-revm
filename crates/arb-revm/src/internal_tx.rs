@@ -390,17 +390,36 @@ pub(crate) fn upgrade_arbos_version<J: JournalTr>(
             }
             // v51: no storage changes.
             51 => {}
-            // v52-v59: reserved for Orbit chains.
-            52..=59 => {}
+            // v52-v58: reserved for Orbit chains.
+            52..=58 => {}
+            // v59: Stylus params UpgradeToVersion(3). Nitro's StylusParams.UpgradeToVersion(3) only
+            // bumps the version field (2 -> 3); no other param changes.
+            59 => {
+                use crate::storage::programs::{stylus_param_layout as l, pack_uint, V3_STYLUS_VERSION};
+                let mut params_word = state
+                    .programs
+                    .read_params_word(journal)
+                    .map_err(|e| format!("[ARBITRUM] v59: failed to read Stylus params: {e}"))?;
+                pack_uint(&mut params_word, l::VERSION.0, l::VERSION.1, V3_STYLUS_VERSION);
+                state
+                    .programs
+                    .write_params_word(params_word, journal)
+                    .map_err(|e| format!("[ARBITRUM] v59: failed to write Stylus params: {e}"))?;
+            }
             // v60: Stylus StylusContractLimit param + transaction-filterer init.
-            // Nitro: `p.UpgradeToArbosVersion(60)` sets MaxFragmentCount = initialMaxFragmentCount (2)
-            // + `addressSet.Initialize(transactionFiltererSubspace)` (no-op on fresh trie).
+            // Nitro `p.UpgradeToArbosVersion(60)` sets MaxWasmSize = arbOS60MaxWasmSize (256 KB) and
+            // MaxFragmentCount = initialMaxFragmentCount (4); plus
+            // `addressSet.Initialize(transactionFiltererSubspace)` (no-op on fresh trie).
             60 => {
-                use crate::storage::programs::{stylus_param_layout as l, pack_uint, INITIAL_MAX_FRAGMENT_COUNT};
+                use crate::storage::programs::{
+                    stylus_param_layout as l, pack_uint, ARBOS60_MAX_WASM_SIZE,
+                    INITIAL_MAX_FRAGMENT_COUNT,
+                };
                 let mut params_word = state
                     .programs
                     .read_params_word(journal)
                     .map_err(|e| format!("[ARBITRUM] v60: failed to read Stylus params: {e}"))?;
+                pack_uint(&mut params_word, l::MAX_WASM_SIZE.0, l::MAX_WASM_SIZE.1, ARBOS60_MAX_WASM_SIZE);
                 pack_uint(&mut params_word, l::MAX_FRAGMENT_COUNT.0, l::MAX_FRAGMENT_COUNT.1, INITIAL_MAX_FRAGMENT_COUNT);
                 state
                     .programs
@@ -409,6 +428,12 @@ pub(crate) fn upgrade_arbos_version<J: JournalTr>(
                 // transaction-filterer AddressSet.Initialize writes 0 to slot 0, SSTORE no-op
                 // on a fresh trie; the AddressSet already initializes lazily on first use.
             }
+            // v61: ArbosVersion_MultiGasRefundFix -- multi-dimensional gas bug fixes. Nitro's
+            // arbosstate.go case ArbosVersion_61 is "No state changes needed." The behavioral gates
+            // (tx_processor.go:625, l2pricing/model.go:343) only affect the MultiGasConstraints
+            // model; Robinhood runs SingleGasConstraints, where the multi-gas refund is zero at both
+            // v60 and v61, so no execution change either.
+            61 => {}
             unknown => {
                 return Err(format!(
                     "[ARBITRUM] chain is upgrading to unsupported ArbOS version {unknown}; please upgrade the node"
