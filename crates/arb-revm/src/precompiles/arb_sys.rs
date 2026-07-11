@@ -4,6 +4,22 @@ use revm::primitives::{Address, B256, Bytes, Log, keccak256};
 
 const ARBOS_VERSION_WITH_NATIVE_TOKEN_OWNERS_SEND_RESTRICTION: u64 = 41;
 const ARBOS_VERSION_RETURNS_SEND_INDEX: u64 = 4;
+/// From ArbOS 11 on, `ArbSys.arbBlockHash` reports an out-of-range block as the
+/// `InvalidBlockNumber(uint256,uint256)` custom error (a graceful, gas-refunding revert). Before 11
+/// it returned a plain Go error, which Nitro's precompile framework burns all gas for.
+const ARBOS_VERSION_ARB_BLOCK_HASH_SOL_ERROR: u64 = 11;
+
+/// Graceful revert carrying Nitro's `InvalidBlockNumber(uint256 requested, uint256 current)` custom
+/// error (selector `0xd5dc642d`), used by `ArbSys.arbBlockHash` at ArbOS >= 11.
+fn invalid_block_number_revert(gas_limit: u64, requested: U256, current: U256) -> InterpreterResult {
+    let mut data = vec![0xd5u8, 0xdc, 0x64, 0x2d];
+    data.extend_from_slice(&alloy_core::sol_types::SolValue::abi_encode(&(requested, current)));
+    InterpreterResult {
+        result: InstructionResult::Revert,
+        gas: Gas::new(gas_limit),
+        output: Bytes::from(data),
+    }
+}
 
 const L2_TO_L1_TX_EVENT_SIGNATURE: &[u8] =
     b"L2ToL1Tx(address,address,uint256,uint256,uint256,uint256,uint256,uint256,bytes)";
@@ -35,10 +51,31 @@ where
             )
         }
         ArbSys::ArbSysCalls::arbBlockHash(call) => {
-            let target: u64 = call.arbBlockNum.try_into().unwrap_or(u64::MAX);
             let current: u64 = ctx.block_number();
-            if target >= current || target.saturating_add(256) < current {
-                return revert_result(gas_limit, "ArbSys: invalid block number");
+            // Nitro requires the argument to fit in a uint64 AND be within the last 256 L2 blocks
+            // (strictly before the current block). Anything else is rejected.
+            let fits_u64 = call.arbBlockNum <= U256::from(u64::MAX);
+            let target: u64 = if fits_u64 {
+                call.arbBlockNum.saturating_to()
+            } else {
+                u64::MAX
+            };
+            if !fits_u64 || target >= current || target.saturating_add(256) < current {
+                let arbos_version = match state.arbos_version.get(ctx.journal_mut()) {
+                    Ok(v) => v,
+                    Err(e) => return revert_result(gas_limit, &format!("ArbSys: storage error: {e}")),
+                };
+                // ArbOS >= 11 returns the `InvalidBlockNumber(uint256,uint256)` custom error, which
+                // Nitro's precompile framework renders as a graceful (gas-refunding) revert. Before
+                // v11 it returned a plain `errors.New(...)`, which the framework treats as an
+                // all-gas-consuming failure with empty output (NOT a graceful revert). Matching this
+                // gas behaviour is load-bearing: a contract that STATICCALLs arbBlockHash and catches
+                // the failure sees a very different amount of gas burned, changing whether the outer
+                // tx runs out of gas (arb1 block 59245477, ArbOS 10).
+                if arbos_version >= ARBOS_VERSION_ARB_BLOCK_HASH_SOL_ERROR {
+                    return invalid_block_number_revert(gas_limit, call.arbBlockNum, U256::from(current));
+                }
+                return gated_revert_result(gas_limit);
             }
             let hash = ctx.block_hash(target).unwrap_or(B256::ZERO);
             ok_result(
