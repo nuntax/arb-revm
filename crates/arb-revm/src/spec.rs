@@ -8,8 +8,8 @@ use revm::primitives::hardfork::SpecId;
 /// of `op_revm::OpSpecId`: it is the `Cfg::Spec` carried through execution and is the
 /// single source of truth for "which ArbOS version's rules apply".
 ///
-/// EVM-hardfork mapping (from Nitro `params/config.go` `IsShanghai`/`IsCancun`/`IsPrague`):
-/// ArbOS 1–10 → London, 11+ → Shanghai, 20+ → Cancun, 40+ → Prague.
+/// EVM-hardfork mapping (from Nitro `params/config.go` `IsShanghai`/`IsCancun`/`IsPrague`/`IsOsaka`):
+/// ArbOS 1–10 → London, 11+ → Shanghai, 20+ → Cancun, 40+ → Prague, 50+ → Osaka.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[allow(non_camel_case_types)]
@@ -59,7 +59,9 @@ impl ArbSpecId {
     /// per Nitro's ArbOS-version → hardfork schedule.
     pub const fn into_eth_spec(self) -> SpecId {
         let v = self as u8;
-        if v >= 40 {
+        if v >= 50 {
+            SpecId::OSAKA
+        } else if v >= 40 {
             SpecId::PRAGUE
         } else if v >= 20 {
             SpecId::CANCUN
@@ -115,7 +117,7 @@ mod tests {
 
     #[test]
     fn arbos_version_maps_to_correct_hardfork() {
-        // Nitro params/config.go: 1-10 London, 11+ Shanghai, 20+ Cancun, 40+ Prague.
+        // Nitro params/config.go: 1-10 London, 11+ Shanghai, 20+ Cancun, 40+ Prague, 50+ Osaka.
         assert_eq!(ArbSpecId::from_arbos_version(1).into_eth_spec(), SpecId::LONDON);
         assert_eq!(
             ArbSpecId::from_arbos_version(10).into_eth_spec(),
@@ -142,13 +144,26 @@ mod tests {
             SpecId::PRAGUE
         );
         assert_eq!(
-            ArbSpecId::from_arbos_version(60).into_eth_spec(),
+            ArbSpecId::from_arbos_version(41).into_eth_spec(),
             SpecId::PRAGUE
+        );
+        // ArbOS 50 (Dia) is the Osaka boundary: Nitro IsOsaka == arbosVersion >= 50.
+        assert_eq!(
+            ArbSpecId::from_arbos_version(50).into_eth_spec(),
+            SpecId::OSAKA
+        );
+        assert_eq!(
+            ArbSpecId::from_arbos_version(51).into_eth_spec(),
+            SpecId::OSAKA
+        );
+        assert_eq!(
+            ArbSpecId::from_arbos_version(60).into_eth_spec(),
+            SpecId::OSAKA
         );
         // Unknown future versions clamp to the latest known.
         assert_eq!(
             ArbSpecId::from_arbos_version(999).into_eth_spec(),
-            SpecId::PRAGUE
+            SpecId::OSAKA
         );
     }
 

@@ -932,6 +932,8 @@ async fn main() -> Result<()> {
     cfg_env.disable_eip7623 = !arb_revm::ArbosState::open()
         .features
         .read_calldata_price_increase_db(&mut db);
+    // Nitro exempts Arbitrum from the EIP-7825 per-tx gas cap (Osaka / ArbOS 50+); match it.
+    cfg_env.tx_gas_limit_cap = Some(u64::MAX);
 
     // --trace-tx <idx>: run with an opcode/call-frequency inspector and dump what the
     // engine does for tx[idx] (diagnosing gas-divergence). Earlier txs build up state.

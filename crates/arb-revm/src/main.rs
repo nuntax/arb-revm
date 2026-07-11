@@ -575,6 +575,8 @@ where
         .with_chain_id(cfg.chain_id)
         .with_disable_priority_fee_check(cfg.disable_priority_fee_check);
     cfg_env.disable_balance_check = cfg.disable_balance_check;
+    // Nitro exempts Arbitrum from the EIP-7825 per-tx gas cap (Osaka / ArbOS 50+); match it.
+    cfg_env.tx_gas_limit_cap = Some(u64::MAX);
 
     let context: ArbContext<&mut DB> = ArbContext::arb_with_chain_context(chain)
         .with_db(db)

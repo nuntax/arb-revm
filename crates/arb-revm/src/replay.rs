@@ -355,6 +355,8 @@ pub fn replay_fixture(fixture: &ReplayFixture) -> ReplayReport {
         .with_chain_id(fixture.chain_id)
         .with_disable_priority_fee_check(true);
     cfg_env.disable_balance_check = true;
+    // Nitro exempts Arbitrum from the EIP-7825 per-tx gas cap (Osaka / ArbOS 50+); match it.
+    cfg_env.tx_gas_limit_cap = Some(u64::MAX);
 
     let chain = ArbChainContext::new(None).with_l1_block_number(fixture.block.l1_block_number);
     let context: ArbContext<&mut _> = ArbContext::arb_with_chain_context(chain)

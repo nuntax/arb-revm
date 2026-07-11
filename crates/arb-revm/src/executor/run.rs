@@ -236,6 +236,10 @@ where
     // is enabled (Nitro state_transition.go: `IsPrague && IsCalldataPricingIncreaseEnabled()`).
     // Arbitrum otherwise prices calldata via its own L1 poster fee, so the floor must be off.
     cfg_env.disable_eip7623 = !ArbosState::open().features.read_calldata_price_increase_db(db);
+    // EIP-7825 caps a single tx at 2^24 gas from Osaka (ArbOS 50+). Nitro exempts Arbitrum from
+    // that cap (state_transition.go: `!IsArbitrum() && isOsaka && ...`), so disable it here or we
+    // would reject high-gas L2 txs that Nitro accepts.
+    cfg_env.tx_gas_limit_cap = Some(u64::MAX);
 
     let context: ArbContext<&mut DB> = ArbContext::arb_with_chain_context(chain)
         .with_db(db)
