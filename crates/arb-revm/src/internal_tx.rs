@@ -14,6 +14,14 @@ const HISTORY_STORAGE_ADDRESS: Address = Address::new([
     0x00, 0x00, 0xF9, 0x08, 0x27, 0xF1, 0xC5, 0x3a, 0x10, 0xcb, 0x7A, 0x02, 0x33, 0x5B, 0x17, 0x53,
     0x20, 0x00, 0x29, 0x35,
 ]);
+/// Dedicated backing account for the ArbOS TransactionFiltering state
+/// (`types.FilteredTransactionsStateAddress` = `0xA4B0500000000000000000000000000000000001`),
+/// introduced at ArbOS 60. Nitro opens this state on every `OpenArbosState` at v60+, and
+/// `KVStorage` calls `SetNonce(account, 1)` so Geth won't prune the (otherwise empty) account.
+const FILTERED_TRANSACTIONS_STATE_ADDRESS: Address = Address::new([
+    0xA4, 0xB0, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x01,
+]);
 /// Arbitrum's EIP-2935 ring-buffer size (`0x05ffd0`); Nitro widened the Ethereum default
 /// of 8191 to this. See `params.HistoryStorageCodeArbitrum`.
 const HISTORY_SERVE_WINDOW: u64 = 393_168;
@@ -427,6 +435,19 @@ pub(crate) fn upgrade_arbos_version<J: JournalTr>(
                     .map_err(|e| format!("[ARBITRUM] v60: failed to write Stylus params: {e}"))?;
                 // transaction-filterer AddressSet.Initialize writes 0 to slot 0, SSTORE no-op
                 // on a fresh trie; the AddressSet already initializes lazily on first use.
+                //
+                // v60 also activates ArbOS TransactionFiltering, whose dedicated state account
+                // (FILTERED_TRANSACTIONS_STATE_ADDRESS) is opened on every OpenArbosState at v60+
+                // via KVStorage, which does SetNonce(account, 1) so Geth won't prune the empty
+                // account. Nitro thus creates it on the first v60 block; without this the account
+                // is absent from our trie and the state root diverges from the upgrade block on
+                // (an inert nonce=1 account, so every queryable value still matches - a pure
+                // trie-structure divergence). Mark it here at the upgrade step.
+                journal
+                    .load_account_mut(FILTERED_TRANSACTIONS_STATE_ADDRESS)
+                    .map_err(|e| format!("[ARBITRUM] failed to load filtered-tx state account: {e}"))?
+                    .data
+                    .set_nonce(1);
             }
             // v61: ArbosVersion_MultiGasRefundFix -- multi-dimensional gas bug fixes. Nitro's
             // arbosstate.go case ArbosVersion_61 is "No state changes needed." The behavioral gates
