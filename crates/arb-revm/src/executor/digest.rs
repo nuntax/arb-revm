@@ -28,7 +28,22 @@ pub fn digest_message_envelope(
     let l1_header = L1Header::from_header(&l1_message.header, meta.delayed_messages_read)
         .map_err(|e| eyre!("invalid L1 header in sequencer message: {e}"))?;
 
-    let txs = parse_message(l1_message, chain_id, version)?;
+    // Nitro `arbos.ProduceBlock` tolerates a `ParseL2Transactions` failure by logging and
+    // producing an empty block (`txes = types.Transactions{}`) rather than aborting. Match that:
+    // a message that fails to decode (e.g. an empty L2 body -> "L2 message kind missing") yields a
+    // zero-tx block, keeping the node in lockstep with Nitro instead of crashing. Any resulting
+    // state divergence (if the failure were really our decode bug, not a genuinely empty message)
+    // still surfaces at the next block via the EIP-2935 parent-hash coupling.
+    let txs = match parse_message(l1_message, chain_id, version) {
+        Ok(txs) => txs,
+        Err(e) => {
+            tracing::warn!(
+                sequence_number = feed_msg.sequence_number,
+                "error parsing incoming message, producing empty block: {e}"
+            );
+            Vec::new()
+        }
+    };
     let l1_base_fee_wei = l1_header.base_fee_l1.unwrap_or(U256::ZERO);
 
     Ok(ArbMessageEnvelope {
