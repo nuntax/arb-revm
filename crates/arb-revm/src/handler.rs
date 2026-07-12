@@ -8,7 +8,9 @@ use crate::{
     },
     deposit_tx, internal_tx,
     l1_cost::{compute_poster_info, encode_tx_bytes},
-    retry_tx, submit_retryable_tx,
+    retry_tx,
+    storage::StorageSpace,
+    submit_retryable_tx,
     transaction::ArbTxTr,
 };
 use revm::{
@@ -25,8 +27,19 @@ use revm::{
         CallOutcome, Gas, InitialAndFloorGas, InstructionResult, InterpreterResult,
         interpreter::EthInterpreter, interpreter_action::FrameInit,
     },
-    primitives::{Address, Bytes, U256, hardfork::SpecId},
+    primitives::{Address, Bytes, U256, hardfork::SpecId, keccak256},
 };
+
+/// ArbOS version at which the on-chain transaction filter is active (Nitro
+/// ArbosVersion_TransactionFiltering = 60).
+const ARBOS_VERSION_TRANSACTION_FILTERING: u64 = 60;
+
+/// Dedicated backing account for the filtered-transactions KV store (Nitro
+/// `types.FilteredTransactionsStateAddress`).
+const FILTERED_TRANSACTIONS_STATE_ADDRESS: Address = Address::new([
+    0xA4, 0xB0, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x01,
+]);
 
 /// Arbitrum handler that composes mainnet logic and overrides Arbitrum-specific
 /// transaction semantics.
@@ -103,6 +116,28 @@ fn collect_tips_enabled(spec: ArbSpecId, delayed_inbox: bool, collect_tips_flag:
         return false;
     }
     collect_tips_flag != 0
+}
+
+/// True when the current (non-protocol) tx's hash was pre-registered in the on-chain
+/// transaction filter. Nitro `RevertedTxHook` skips such a tx's execution but consumes all its gas.
+/// The read is free (raw journal), matching Nitro's `IsFilteredFree`.
+fn is_filtered_normal_tx<EVM>(evm: &mut EVM) -> bool
+where
+    EVM: EvmTr<Context: ArbContextTr>,
+{
+    let tx_hash = match evm.ctx().tx().encoded_2718_bytes() {
+        Some(bytes) => keccak256(bytes),
+        None => return false,
+    };
+    let arbos = ArbosState::open();
+    let journal = evm.ctx_mut().journal_mut();
+    if arbos.arbos_version.get(journal).unwrap_or(0) < ARBOS_VERSION_TRANSACTION_FILTERING {
+        return false;
+    }
+    StorageSpace::new(FILTERED_TRANSACTIONS_STATE_ADDRESS)
+        .get(tx_hash, journal)
+        .map(|v| v.data == U256::from(1))
+        .unwrap_or(false)
 }
 
 impl<EVM, ERROR, FRAME> Handler for ArbHandler<EVM, ERROR, FRAME>
@@ -429,6 +464,18 @@ where
                 gas_limit: tx_gas_limit,
             }
             .into());
+        }
+
+        // Nitro `RevertedTxHook`: a normal (non-protocol) tx whose hash was pre-registered in the
+        // on-chain filter is NOT executed but consumes all its gas (status 0). The nonce was already
+        // bumped by caller validation. Applies from ArbOS 60 (TransactionFiltering).
+        if is_filtered_normal_tx(evm) {
+            // Consume the whole tx gas budget (Nitro sets gasRemaining = 0). gasUsed is taken from
+            // the returned frame's spent gas, so spend the full tx limit here (intrinsic included).
+            let mut gas = Gas::new(tx_gas_limit);
+            gas.spend_all();
+            let output = InterpreterResult::new(InstructionResult::Revert, Bytes::new(), gas);
+            return Ok(FrameResult::Call(CallOutcome::new(output, 0..0)));
         }
 
         let first_frame_input = self
