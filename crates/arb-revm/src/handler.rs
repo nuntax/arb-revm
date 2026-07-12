@@ -374,9 +374,15 @@ where
             return Ok(internal_success_frame_result());
         }
         if is_deposit_tx(evm) {
-            deposit_tx::apply_deposit_tx(evm.ctx_mut())
+            let outcome = deposit_tx::apply_deposit_tx(evm.ctx_mut())
                 .map_err(|msg| ERROR::from_string(msg))?;
-            return Ok(internal_success_frame_result());
+            return Ok(match outcome {
+                // Normal deposit: success receipt.
+                deposit_tx::DepositOutcome::Applied => internal_success_frame_result(),
+                // Filtered deposit: Nitro records a failed tx (status 0, gasUsed 0) but keeps the
+                // redirected transfer (same shape as a funds-failed submit-retryable).
+                deposit_tx::DepositOutcome::Filtered => submit_retryable_failed_frame_result(),
+            });
         }
         if is_submit_retryable_tx(evm) {
             let outcome = submit_retryable_tx::apply_submit_retryable_tx(evm.ctx_mut())
@@ -1037,9 +1043,15 @@ where
             return Ok(internal_success_frame_result());
         }
         if is_deposit_tx(evm) {
-            deposit_tx::apply_deposit_tx(evm.ctx_mut())
+            let outcome = deposit_tx::apply_deposit_tx(evm.ctx_mut())
                 .map_err(|msg| ERROR::from_string(msg))?;
-            return Ok(internal_success_frame_result());
+            return Ok(match outcome {
+                // Normal deposit: success receipt.
+                deposit_tx::DepositOutcome::Applied => internal_success_frame_result(),
+                // Filtered deposit: Nitro records a failed tx (status 0, gasUsed 0) but keeps the
+                // redirected transfer (same shape as a funds-failed submit-retryable).
+                deposit_tx::DepositOutcome::Filtered => submit_retryable_failed_frame_result(),
+            });
         }
         if is_submit_retryable_tx(evm) {
             let outcome = submit_retryable_tx::apply_submit_retryable_tx(evm.ctx_mut())
