@@ -33,6 +33,9 @@ pub struct ArbChainContext {
     /// model to price page growth across the tx's (possibly nested) Stylus calls.
     pub stylus_pages_open: u16,
     pub stylus_pages_ever: u16,
+    /// A normal transaction registered in ArbOS's transaction filter. It skips EVM execution
+    /// after gas charging and consumes its full gas limit.
+    pub filtered_tx: bool,
     /// Ticket ids of pre-Stylus (`ArbOS < 30`) zero-callvalue retryables *submitted in this
     /// block*. Nitro's `util.TransferBalance` resurrects the escrow (destructed by the submit)
     /// as a present-but-empty "zombie" only when a same-block redeem takes the
@@ -56,6 +59,7 @@ impl ArbChainContext {
             paid_gas_price: 0,
             stylus_pages_open: 0,
             stylus_pages_ever: 0,
+            filtered_tx: false,
             pending_zombie_escrow_tickets: Vec::new(),
         }
     }
@@ -74,6 +78,7 @@ impl ArbChainContext {
         self.paid_gas_price = 0;
         self.stylus_pages_open = 0;
         self.stylus_pages_ever = 0;
+        self.filtered_tx = false;
     }
 
     /// Sets the sequence number.

@@ -4,16 +4,14 @@ use crate::{
     constants::{
         ARB_RETRYABLE_TX_ADDRESS, ARBITRUM_CONTRACT_TX_TYPE, ARBITRUM_DEPOSIT_TX_TYPE,
         ARBITRUM_INTERNAL_TX_TYPE, ARBITRUM_RETRY_TX_TYPE, ARBITRUM_SUBMIT_RETRYABLE_TX_TYPE,
-        ARBOS_ACTS_ADDRESS,
-        BATCH_POSTER_ADDRESS, CURRENT_TX_L1_FEE_ADDR, FILTERED_TRANSACTIONS_STATE_ADDRESS,
+        ARBOS_ACTS_ADDRESS, BATCH_POSTER_ADDRESS, CURRENT_TX_L1_FEE_ADDR,
         L1_PRICER_FUNDS_POOL_ADDRESS,
     },
     deposit_tx, internal_tx,
     l1_cost::{compute_poster_info, encode_tx_bytes},
-    retry_tx,
-    storage::StorageSpace,
-    submit_retryable_tx,
+    retry_tx, submit_retryable_tx,
     transaction::ArbTxTr,
+    transaction_filter::is_tx_hash_filtered,
 };
 use revm::{
     context_interface::{
@@ -31,10 +29,6 @@ use revm::{
     },
     primitives::{Address, Bytes, U256, hardfork::SpecId, keccak256},
 };
-
-/// ArbOS version at which the on-chain transaction filter is active (Nitro
-/// ArbosVersion_TransactionFiltering = 60).
-const ARBOS_VERSION_TRANSACTION_FILTERING: u64 = 60;
 
 /// Arbitrum handler that composes mainnet logic and overrides Arbitrum-specific
 /// transaction semantics.
@@ -113,10 +107,10 @@ fn collect_tips_enabled(spec: ArbSpecId, delayed_inbox: bool, collect_tips_flag:
     collect_tips_flag != 0
 }
 
-/// True when the current (non-protocol) tx's hash was pre-registered in the on-chain
-/// transaction filter. Nitro `RevertedTxHook` skips such a tx's execution but consumes all its gas.
-/// The read is free (raw journal), matching Nitro's `IsFilteredFree`.
-fn is_filtered_normal_tx<EVM>(evm: &mut EVM) -> bool
+/// True when the current transaction reaches Nitro's `RevertedTxHook` with a hash registered in
+/// the on-chain filter. Deposits and submit-retryables are handled in their StartTxHook branches;
+/// regular and retry transactions arrive here after their respective gas/pre-state setup.
+fn is_filtered_post_start_tx<EVM>(evm: &mut EVM) -> bool
 where
     EVM: EvmTr<Context: ArbContextTr>,
 {
@@ -124,15 +118,15 @@ where
         Some(bytes) => keccak256(bytes),
         None => return false,
     };
-    let arbos = ArbosState::open();
     let journal = evm.ctx_mut().journal_mut();
-    if arbos.arbos_version.get(journal).unwrap_or(0) < ARBOS_VERSION_TRANSACTION_FILTERING {
-        return false;
-    }
-    StorageSpace::new(FILTERED_TRANSACTIONS_STATE_ADDRESS)
-        .get(tx_hash, journal)
-        .map(|v| v.data == U256::ONE)
-        .unwrap_or(false)
+    is_tx_hash_filtered(tx_hash, journal).unwrap_or(false)
+}
+
+fn filtered_tx_frame_result(gas_limit: u64) -> FrameResult {
+    let mut gas = Gas::new(gas_limit);
+    gas.spend_all();
+    let output = InterpreterResult::new(InstructionResult::Revert, Bytes::new(), gas);
+    FrameResult::Call(CallOutcome::new(output, 0..0))
 }
 
 impl<EVM, ERROR, FRAME> Handler for ArbHandler<EVM, ERROR, FRAME>
@@ -268,7 +262,6 @@ where
         // overridden validate_against_state_and_deduct_caller logic is applied.
         self.validate_against_state_and_deduct_caller(evm, init_and_floor_gas)?;
         self.load_accounts(evm)?;
-        let mainnet_cost = self.apply_eip7702_auth_list(evm, init_and_floor_gas)?;
 
         // --- GasChargingHook (Nitro: tx_processor.go GasChargingHook) ---
         // Two-phase approach to avoid simultaneous mutable+immutable borrows:
@@ -294,12 +287,12 @@ where
             let arbos_state = ArbosState::open();
             let journal = ctx.journal_mut();
 
-            let spec = ArbSpecId::from_arbos_version(arbos_state.arbos_version.get(journal).unwrap_or(0));
+            let spec =
+                ArbSpecId::from_arbos_version(arbos_state.arbos_version.get(journal).unwrap_or(0));
             if paid_gas_price.is_zero() {
                 let collect_tips_flag = arbos_state.collect_tips.get(journal).unwrap_or(0);
                 let delayed_inbox = coinbase != BATCH_POSTER_ADDRESS;
-                let collect_tips =
-                    collect_tips_enabled(spec, delayed_inbox, collect_tips_flag);
+                let collect_tips = collect_tips_enabled(spec, delayed_inbox, collect_tips_flag);
                 paid_gas_price = if collect_tips {
                     gas_price
                 } else {
@@ -321,8 +314,13 @@ where
                 .get(journal)
                 .unwrap_or(0) as u32;
 
-            let info =
-                compute_poster_info(&tx_bytes, coinbase, price_per_unit, paid_gas_price, brotli_level);
+            let info = compute_poster_info(
+                &tx_bytes,
+                coinbase,
+                price_per_unit,
+                paid_gas_price,
+                brotli_level,
+            );
 
             if info.calldata_units > 0 {
                 let units_since = arbos_state
@@ -387,6 +385,15 @@ where
             );
         }
 
+        // Nitro's RevertedTxHook runs after gas charging but before EIP-7702 authorization.
+        // A filtered transaction consumes all gas without executing or mutating its authorities.
+        if is_filtered_post_start_tx(evm) {
+            evm.ctx_mut().chain_mut().filtered_tx = true;
+            return Ok(0);
+        }
+
+        let mainnet_cost = self.apply_eip7702_auth_list(evm, init_and_floor_gas)?;
+
         // In revm, pre_execution's return value is interpreted as an EIP-7702 refund delta,
         // not as pre-EVM gas burn. Nitro's poster/hold gas is instead enforced by reducing
         // the first-frame gas limit in execution().
@@ -398,9 +405,11 @@ where
         evm: &mut Self::Evm,
         init_and_floor_gas: &InitialAndFloorGas,
     ) -> Result<FrameResult, Self::Error> {
+        if evm.ctx().chain().filtered_tx {
+            return Ok(filtered_tx_frame_result(evm.ctx().tx().gas_limit()));
+        }
         if is_internal_tx(evm) {
-            internal_tx::apply_internal_tx(evm.ctx_mut())
-                .map_err(|msg| ERROR::from_string(msg))?;
+            internal_tx::apply_internal_tx(evm.ctx_mut()).map_err(|msg| ERROR::from_string(msg))?;
             return Ok(internal_success_frame_result());
         }
         if is_deposit_tx(evm) {
@@ -411,7 +420,7 @@ where
                 deposit_tx::DepositOutcome::Applied => internal_success_frame_result(),
                 // Filtered deposit: Nitro records a failed tx (status 0, gasUsed 0) but keeps the
                 // redirected transfer (same shape as a funds-failed submit-retryable).
-                deposit_tx::DepositOutcome::Filtered => submit_retryable_failed_frame_result(),
+                deposit_tx::DepositOutcome::Filtered => submit_retryable_failed_frame_result(0),
             });
         }
         if is_submit_retryable_tx(evm) {
@@ -423,16 +432,20 @@ where
                 submit_retryable_tx::SubmitRetryableOutcome::Created { gas_used } => {
                     submit_retryable_success_frame_result(gas_used)
                 }
-                // Funds check failed: Nitro records a failed tx (status 0, gasUsed 0) and
-                // keeps the partial state (deposit mint, fee refunds) instead of halting.
-                submit_retryable_tx::SubmitRetryableOutcome::Failed => {
-                    submit_retryable_failed_frame_result()
+                submit_retryable_tx::SubmitRetryableOutcome::Failed { gas_used } => {
+                    submit_retryable_failed_frame_result(gas_used)
                 }
             });
         }
         if is_retry_tx(evm) {
             retry_tx::apply_retry_tx_pre_execution(evm.ctx_mut())
                 .map_err(|msg| ERROR::from_string(msg))?;
+            // Nitro's StartTxHook has now moved callvalue and prepaid gas. RevertedTxHook then
+            // checks the retry envelope hash, consumes the remaining gas, and lets EndTxHook
+            // restore the escrow because the retry failed.
+            if is_filtered_post_start_tx(evm) {
+                return Ok(filtered_tx_frame_result(evm.ctx().tx().gas_limit()));
+            }
             return self.mainnet.execution(evm, init_and_floor_gas);
         }
 
@@ -461,21 +474,9 @@ where
             .into());
         }
 
-        // Nitro `RevertedTxHook`: a normal (non-protocol) tx whose hash was pre-registered in the
-        // on-chain filter is NOT executed but consumes all its gas (status 0). The nonce was already
-        // bumped by caller validation. Applies from ArbOS 60 (TransactionFiltering).
-        if is_filtered_normal_tx(evm) {
-            // Consume the whole tx gas budget (Nitro sets gasRemaining = 0). gasUsed is taken from
-            // the returned frame's spent gas, so spend the full tx limit here (intrinsic included).
-            let mut gas = Gas::new(tx_gas_limit);
-            gas.spend_all();
-            let output = InterpreterResult::new(InstructionResult::Revert, Bytes::new(), gas);
-            return Ok(FrameResult::Call(CallOutcome::new(output, 0..0)));
-        }
-
-        let first_frame_input = self
-            .mainnet
-            .first_frame_input(evm, tx_gas_limit.saturating_sub(total_initial), 0)?;
+        let first_frame_input =
+            self.mainnet
+                .first_frame_input(evm, tx_gas_limit.saturating_sub(total_initial), 0)?;
         let mut frame_result = self.mainnet.run_exec_loop(evm, first_frame_input)?;
         self.mainnet.last_frame_result(evm, 0, &mut frame_result)?;
         // Return the withheld cap gas: it bounded compute but is not part of gasUsed.
@@ -521,8 +522,7 @@ where
                 // ArbitrumContractTx (L1->L2 unsigned contract call) is not nonce-checked: its
                 // nonce field is always 0 and uniqueness comes from the L1 requestId. Nitro skips
                 // the check but still bumps the sender nonce (kept below via `bump_nonce`).
-                ctx.cfg().is_nonce_check_disabled()
-                    || tx.tx_type() == ARBITRUM_CONTRACT_TX_TYPE,
+                ctx.cfg().is_nonce_check_disabled() || tx.tx_type() == ARBITRUM_CONTRACT_TX_TYPE,
             )
         };
 
@@ -530,11 +530,11 @@ where
             let ctx = evm.ctx_mut();
             let arbos_state = ArbosState::open();
             let journal = ctx.journal_mut();
-            let spec = ArbSpecId::from_arbos_version(arbos_state.arbos_version.get(journal).unwrap_or(0));
+            let spec =
+                ArbSpecId::from_arbos_version(arbos_state.arbos_version.get(journal).unwrap_or(0));
             let collect_tips_flag = arbos_state.collect_tips.get(journal).unwrap_or(0);
             let delayed_inbox = ctx.block().beneficiary() != BATCH_POSTER_ADDRESS;
-            let collect_tips =
-                collect_tips_enabled(spec, delayed_inbox, collect_tips_flag);
+            let collect_tips = collect_tips_enabled(spec, delayed_inbox, collect_tips_flag);
 
             let paid = if collect_tips {
                 effective_gas_price
@@ -597,14 +597,19 @@ where
             // here is expected, not fatal. Internal and deposit txs are protocol-guaranteed
             // and must never fail, a non-ok result for those is a real bug.
             if !status.is_ok() && !is_submit_retryable_tx(evm) {
-                let label = if is_internal_tx(evm) { "internal" } else { "deposit" };
-                return Err(ERROR::from_string(
-                    format!("[ARBITRUM] {label} transaction execution failed"),
-                ));
+                let label = if is_internal_tx(evm) {
+                    "internal"
+                } else {
+                    "deposit"
+                };
+                return Err(ERROR::from_string(format!(
+                    "[ARBITRUM] {label} transaction execution failed"
+                )));
             }
             return Ok(());
         }
-        self.mainnet.last_frame_result(evm, original_reservoir, frame_result)
+        self.mainnet
+            .last_frame_result(evm, original_reservoir, frame_result)
     }
 
     fn reimburse_caller(
@@ -766,7 +771,10 @@ where
         // portion unconditionally (as before) silently burned it and under-credited the
         // network fee account.
         let infra_account = if spec.is_enabled_in(ArbSpecId::ARBOS_5) {
-            arbos_state.infra_fee_account.get(journal).unwrap_or_default()
+            arbos_state
+                .infra_fee_account
+                .get(journal)
+                .unwrap_or_default()
         } else {
             Address::ZERO
         };
@@ -966,7 +974,14 @@ where
             );
         }
 
-        retry_fee_refund(journal, net_account, network_refund, refund_to, from, &mut remaining_refund);
+        retry_fee_refund(
+            journal,
+            net_account,
+            network_refund,
+            refund_to,
+            from,
+            &mut remaining_refund,
+        );
 
         // GrowBacklog by gas_used (Nitro retry path: gasLimit - gasLeft), using the
         // active L2 pricing model.
@@ -1055,9 +1070,13 @@ fn submit_retryable_success_frame_result(gas_used: u64) -> FrameResult {
 /// receipt with zero gas, mirroring Nitro's `return true, ZeroGas, err, nil`. The state
 /// changes already applied in `apply_submit_retryable_tx` are not reverted (there is no
 /// frame checkpoint to unwind), matching Nitro keeping the deposit mint on failure.
-fn submit_retryable_failed_frame_result() -> FrameResult {
+fn submit_retryable_failed_frame_result(gas_used: u64) -> FrameResult {
     FrameResult::Call(CallOutcome::new(
-        InterpreterResult::new(InstructionResult::Revert, Bytes::new(), Gas::new(0)),
+        InterpreterResult::new(
+            InstructionResult::Revert,
+            Bytes::new(),
+            Gas::new_spent_with_reservoir(gas_used, 0),
+        ),
         0..0,
     ))
 }
@@ -1083,9 +1102,11 @@ where
         evm: &mut Self::Evm,
         init_and_floor_gas: &InitialAndFloorGas,
     ) -> Result<FrameResult, Self::Error> {
+        if evm.ctx().chain().filtered_tx {
+            return Ok(filtered_tx_frame_result(evm.ctx().tx().gas_limit()));
+        }
         if is_internal_tx(evm) {
-            internal_tx::apply_internal_tx(evm.ctx_mut())
-                .map_err(|msg| ERROR::from_string(msg))?;
+            internal_tx::apply_internal_tx(evm.ctx_mut()).map_err(|msg| ERROR::from_string(msg))?;
             return Ok(internal_success_frame_result());
         }
         if is_deposit_tx(evm) {
@@ -1096,7 +1117,7 @@ where
                 deposit_tx::DepositOutcome::Applied => internal_success_frame_result(),
                 // Filtered deposit: Nitro records a failed tx (status 0, gasUsed 0) but keeps the
                 // redirected transfer (same shape as a funds-failed submit-retryable).
-                deposit_tx::DepositOutcome::Filtered => submit_retryable_failed_frame_result(),
+                deposit_tx::DepositOutcome::Filtered => submit_retryable_failed_frame_result(0),
             });
         }
         if is_submit_retryable_tx(evm) {
@@ -1106,21 +1127,28 @@ where
                 submit_retryable_tx::SubmitRetryableOutcome::Created { gas_used } => {
                     submit_retryable_success_frame_result(gas_used)
                 }
-                submit_retryable_tx::SubmitRetryableOutcome::Failed => {
-                    submit_retryable_failed_frame_result()
+                submit_retryable_tx::SubmitRetryableOutcome::Failed { gas_used } => {
+                    submit_retryable_failed_frame_result(gas_used)
                 }
             });
         }
         if is_retry_tx(evm) {
             retry_tx::apply_retry_tx_pre_execution(evm.ctx_mut())
                 .map_err(|msg| ERROR::from_string(msg))?;
+            if is_filtered_post_start_tx(evm) {
+                return Ok(filtered_tx_frame_result(evm.ctx().tx().gas_limit()));
+            }
         }
 
         // poster_gas/hold_gas are 0 for retry txs (they bypass the GasChargingHook), so the
         // same reservation formula covers them; reservoir is 0 at our specs (no EIP-7623).
         let (tx_gas_limit, poster_gas, hold_gas) = {
             let ctx = evm.ctx();
-            (ctx.tx().gas_limit(), ctx.chain().poster_gas, ctx.chain().hold_gas)
+            (
+                ctx.tx().gas_limit(),
+                ctx.chain().poster_gas,
+                ctx.chain().hold_gas,
+            )
         };
         let total_initial = init_and_floor_gas
             .initial_total_gas()
@@ -1134,9 +1162,9 @@ where
             .into());
         }
 
-        let first_frame_input = self
-            .mainnet
-            .first_frame_input(evm, tx_gas_limit.saturating_sub(total_initial), 0)?;
+        let first_frame_input =
+            self.mainnet
+                .first_frame_input(evm, tx_gas_limit.saturating_sub(total_initial), 0)?;
         let mut frame_result = self.inspect_run_exec_loop(evm, first_frame_input)?;
         self.mainnet.last_frame_result(evm, 0, &mut frame_result)?;
         frame_result.gas_mut().erase_cost(hold_gas);
@@ -1152,9 +1180,12 @@ mod tests {
     };
     use crate::{
         ArbBuilder, ArbChainContext, ArbSpecId, ArbTransaction,
-        constants::{ARB_RETRYABLE_TX_ADDRESS, ARBOS_ACTS_ADDRESS, ARBOS_STATE_ADDRESS},
+        constants::{
+            ARB_RETRYABLE_TX_ADDRESS, ARBOS_ACTS_ADDRESS, ARBOS_STATE_ADDRESS,
+            FILTERED_TRANSACTIONS_STATE_ADDRESS,
+        },
         internal_tx,
-        storage::{ArbosState, RETRYABLE_LIFETIME_SECONDS},
+        storage::{ArbosState, RETRYABLE_LIFETIME_SECONDS, StorageSpace},
         submit_retryable_tx::{
             SubmitRetryableCall, compute_submit_retryable_ticket_id,
             encode_submit_retryable_calldata,
@@ -1177,10 +1208,13 @@ mod tests {
 
     fn make_evm(
         db: InMemoryDB,
-    ) -> impl ExecuteCommitEvm<Tx = ArbTransaction<TxEnv>, Error = EVMError<
+    ) -> impl ExecuteCommitEvm<
+        Tx = ArbTransaction<TxEnv>,
+        Error = EVMError<
             <InMemoryDB as revm::Database>::Error,
             revm::context_interface::result::InvalidTransaction,
-        >> {
+        >,
+    > {
         let cfg = CfgEnv::new_with_spec(ArbSpecId::NITRO)
             .with_chain_id(42161)
             .with_disable_priority_fee_check(true);
@@ -1232,6 +1266,56 @@ mod tests {
         tx.nonce = 0;
         tx.chain_id = Some(42161);
         ArbTransaction::new(tx)
+    }
+
+    fn seed_transaction_filter(
+        db: &mut InMemoryDB,
+        tx_hash: B256,
+        filtered_funds_recipient: Address,
+        network_fee_account: Address,
+    ) {
+        db.insert_account_info(ARBOS_STATE_ADDRESS, AccountInfo::default());
+        db.insert_account_info(FILTERED_TRANSACTIONS_STATE_ADDRESS, AccountInfo::default());
+
+        let state = ArbosState::open();
+        let (_, version_slot) = state.arbos_version.account_and_key();
+        let (_, recipient_slot) = state.filtered_funds_recipient.account_and_key();
+        let (_, network_fee_slot) = state.network_fee_account.account_and_key();
+        let filter_slot =
+            StorageSpace::new(FILTERED_TRANSACTIONS_STATE_ADDRESS).slot_for_hash(tx_hash);
+
+        db.insert_account_storage(
+            ARBOS_STATE_ADDRESS,
+            U256::from_be_bytes(version_slot.0),
+            U256::from(60_u64),
+        )
+        .expect("should seed transaction-filtering ArbOS version");
+        db.insert_account_storage(
+            ARBOS_STATE_ADDRESS,
+            U256::from_be_bytes(recipient_slot.0),
+            U256::from_be_bytes({
+                let mut word = [0_u8; 32];
+                word[12..].copy_from_slice(filtered_funds_recipient.as_slice());
+                word
+            }),
+        )
+        .expect("should seed filtered-funds recipient");
+        db.insert_account_storage(
+            ARBOS_STATE_ADDRESS,
+            U256::from_be_bytes(network_fee_slot.0),
+            U256::from_be_bytes({
+                let mut word = [0_u8; 32];
+                word[12..].copy_from_slice(network_fee_account.as_slice());
+                word
+            }),
+        )
+        .expect("should seed network-fee account");
+        db.insert_account_storage(
+            FILTERED_TRANSACTIONS_STATE_ADDRESS,
+            U256::from_be_bytes(filter_slot.0),
+            U256::ONE,
+        )
+        .expect("should seed filtered transaction hash");
     }
 
     fn make_retry_tx(
@@ -1478,6 +1562,102 @@ mod tests {
         assert_eq!(from_account.info.nonce, 0);
     }
 
+    #[test]
+    fn filtered_deposit_redirects_value_and_returns_a_failed_zero_gas_receipt() {
+        let from = Address::with_last_byte(0x35);
+        let original_recipient = Address::with_last_byte(0x36);
+        let network_fee_account = Address::with_last_byte(0x37);
+        let encoded = revm::primitives::bytes!("64c0");
+        let mut db = InMemoryDB::default();
+        // An unset configured recipient must fall back to the network-fee account.
+        seed_transaction_filter(
+            &mut db,
+            keccak256(encoded.as_ref()),
+            Address::ZERO,
+            network_fee_account,
+        );
+        let cfg = CfgEnv::new_with_spec(ArbSpecId::NITRO)
+            .with_chain_id(42161)
+            .with_disable_priority_fee_check(true);
+        let ctx = Context::mainnet()
+            .with_tx(ArbTransaction::<TxEnv>::default())
+            .with_cfg(cfg)
+            .with_chain(ArbChainContext::default())
+            .with_db(db);
+        let mut evm = ctx.build_arb();
+
+        let out = evm
+            .transact(
+                make_deposit_tx(from, original_recipient, U256::from(9_u64))
+                    .with_encoded_2718(encoded),
+            )
+            .expect("filtered deposit must be recorded instead of halting execution");
+
+        assert!(
+            !out.result.is_success(),
+            "filtered deposit receipt must fail"
+        );
+        assert_eq!(out.result.tx_gas_used(), 0);
+        assert_eq!(
+            out.state
+                .get(&network_fee_account)
+                .expect("filtered recipient receives the deposit")
+                .info
+                .balance,
+            U256::from(9_u64)
+        );
+        assert!(
+            !out.state.contains_key(&original_recipient),
+            "the original recipient must not receive a filtered deposit"
+        );
+    }
+
+    #[test]
+    fn filtered_regular_transaction_skips_execution_and_consumes_all_gas() {
+        let caller = Address::with_last_byte(0x38);
+        let target = Address::with_last_byte(0x39);
+        let encoded = revm::primitives::bytes!("02c0");
+        let mut db = InMemoryDB::default();
+        seed_transaction_filter(
+            &mut db,
+            keccak256(encoded.as_ref()),
+            Address::with_last_byte(0x3a),
+            Address::with_last_byte(0x3b),
+        );
+        db.insert_account_info(
+            caller,
+            AccountInfo {
+                balance: U256::from(1_000_000_u64),
+                ..Default::default()
+            },
+        );
+        let cfg = CfgEnv::new_with_spec(ArbSpecId::NITRO)
+            .with_chain_id(42161)
+            .with_disable_priority_fee_check(true);
+        let ctx = Context::mainnet()
+            .with_tx(ArbTransaction::<TxEnv>::default())
+            .with_cfg(cfg)
+            .with_chain(ArbChainContext::default())
+            .with_db(db);
+        let mut evm = ctx.build_arb();
+
+        let out = evm
+            .transact(make_call_tx(0x02, caller, target).with_encoded_2718(encoded))
+            .expect("filtered regular transaction must be included as a failed receipt");
+
+        assert!(!out.result.is_success(), "filtered receipt must fail");
+        assert_eq!(out.result.tx_gas_used(), 100_000);
+        assert_eq!(
+            out.state
+                .get(&caller)
+                .expect("caller nonce update is retained")
+                .info
+                .nonce,
+            1,
+            "Nitro's RevertedTxHook increments the sender nonce"
+        );
+    }
+
     fn retryable_escrow_address(ticket_id: B256) -> Address {
         let mut preimage = Vec::with_capacity("retryable escrow".len() + ticket_id.len());
         preimage.extend_from_slice(b"retryable escrow");
@@ -1696,26 +1876,44 @@ mod tests {
         };
         let ticket_id = compute_submit_retryable_ticket_id(42161, caller, &call);
         let tx = make_submit_retryable_tx(caller, call);
-        let out = evm.transact(tx).expect("under-funded submit-retryable must not be a fatal error");
+        let out = evm
+            .transact(tx)
+            .expect("under-funded submit-retryable must not be a fatal error");
 
         assert!(!out.result.is_success(), "receipt status must be failure");
-        assert_eq!(out.result.tx_gas_used(), 0, "failed submit-retryable consumes zero gas");
-        assert!(out.result.logs().is_empty(), "no TicketCreated on a failed submission");
+        assert_eq!(
+            out.result.tx_gas_used(),
+            0,
+            "failed submit-retryable consumes zero gas"
+        );
+        assert!(
+            out.result.logs().is_empty(),
+            "no TicketCreated on a failed submission"
+        );
 
         // The deposit mint is kept (Nitro does not revert it on this failure path).
-        let caller_account =
-            out.state.get(&caller).expect("caller account present in state diff");
+        let caller_account = out
+            .state
+            .get(&caller)
+            .expect("caller account present in state diff");
         assert_eq!(caller_account.info.balance, U256::from(1_000_u64));
 
         // No retryable record was created: its numTries slot is unwritten.
         let arbos_state = ArbosState::open();
-        let (_, num_tries_slot) = arbos_state.retryables.retryable(ticket_id).num_tries.account_and_key();
+        let (_, num_tries_slot) = arbos_state
+            .retryables
+            .retryable(ticket_id)
+            .num_tries
+            .account_and_key();
         let unwritten = out
             .state
             .get(&ARBOS_STATE_ADDRESS)
             .and_then(|acct| acct.storage.get(&U256::from_be_bytes(num_tries_slot.0)))
             .is_none();
-        assert!(unwritten, "failed submission must not create a retryable record");
+        assert!(
+            unwritten,
+            "failed submission must not create a retryable record"
+        );
     }
 
     #[test]
@@ -1779,6 +1977,211 @@ mod tests {
             out.result.tx_gas_used(),
             21_000,
             "submit-retryable with a scheduled auto-redeem charges the reserved usergas as gasUsed"
+        );
+    }
+
+    #[test]
+    fn filtered_submit_retryable_creates_manual_ticket_and_fails_with_reserved_gas() {
+        let caller = Address::with_last_byte(0x81);
+        let original_refund = Address::with_last_byte(0x82);
+        let original_beneficiary = Address::with_last_byte(0x83);
+        let filtered_recipient = Address::with_last_byte(0x84);
+        let network_fee_account = Address::with_last_byte(0x85);
+        let call = SubmitRetryableCall {
+            request_id: B256::with_last_byte(0x86),
+            l1_base_fee: U256::from(1_u64),
+            deposit_value: U256::from(100_000_u64),
+            retry_value: U256::ZERO,
+            gas_fee_cap: U256::from(1_u64),
+            gas_limit: 21_000,
+            max_submission_fee: U256::from(2_500_u64),
+            fee_refund_address: original_refund,
+            beneficiary: original_beneficiary,
+            retry_to: Some(Address::with_last_byte(0x87)),
+            retry_data: revm::primitives::bytes!("c0ffee"),
+        };
+        let ticket_id = compute_submit_retryable_ticket_id(42161, caller, &call);
+        let mut db = InMemoryDB::default();
+        seed_transaction_filter(&mut db, ticket_id, filtered_recipient, network_fee_account);
+        let cfg = CfgEnv::new_with_spec(ArbSpecId::NITRO)
+            .with_chain_id(42161)
+            .with_disable_priority_fee_check(true);
+        let ctx = Context::mainnet()
+            .with_tx(ArbTransaction::<TxEnv>::default())
+            .with_cfg(cfg)
+            .with_chain(ArbChainContext::default())
+            .with_db(db);
+        let mut evm = ctx.build_arb();
+
+        let out = evm
+            .transact(make_submit_retryable_tx(caller, call))
+            .expect("filtered submit-retryable must not halt execution");
+
+        assert!(
+            !out.result.is_success(),
+            "filtered submission must fail its receipt"
+        );
+        assert_eq!(out.result.tx_gas_used(), 21_000);
+        assert_eq!(out.result.logs().len(), 1, "only TicketCreated is emitted");
+        assert_eq!(out.result.logs()[0].topics()[1], ticket_id);
+
+        let state = ArbosState::open();
+        let retryable = state.retryables.retryable(ticket_id);
+        let (_, beneficiary_slot) = retryable.beneficiary.account_and_key();
+        let (_, tries_slot) = retryable.num_tries.account_and_key();
+        let arbos_account = out
+            .state
+            .get(&ARBOS_STATE_ADDRESS)
+            .expect("retryable writes ArbOS state");
+        let beneficiary = arbos_account
+            .storage
+            .get(&U256::from_be_bytes(beneficiary_slot.0))
+            .expect("retryable beneficiary is written")
+            .present_value();
+        let mut recipient_word = [0_u8; 32];
+        recipient_word[12..].copy_from_slice(filtered_recipient.as_slice());
+        assert_eq!(beneficiary, U256::from_be_bytes(recipient_word));
+        assert_eq!(
+            arbos_account
+                .storage
+                .get(&U256::from_be_bytes(tries_slot.0))
+                .map(|slot| slot.present_value())
+                .unwrap_or(U256::ZERO),
+            U256::ZERO,
+            "filtered submissions retain the ticket without scheduling a retry"
+        );
+        assert!(
+            !out.result.logs().iter().any(|log| log.topics().len() == 4),
+            "filtered submission must not emit RedeemScheduled"
+        );
+    }
+
+    #[test]
+    fn filtered_submit_retryable_without_fundable_redeem_fails_with_zero_gas() {
+        let caller = Address::with_last_byte(0x91);
+        let filtered_recipient = Address::with_last_byte(0x92);
+        let call = SubmitRetryableCall {
+            request_id: B256::with_last_byte(0x93),
+            l1_base_fee: U256::from(1_u64),
+            deposit_value: U256::from(100_000_u64),
+            retry_value: U256::ZERO,
+            gas_fee_cap: U256::from(10_u64),
+            gas_limit: 21_000,
+            max_submission_fee: U256::from(2_500_u64),
+            fee_refund_address: Address::with_last_byte(0x94),
+            beneficiary: Address::with_last_byte(0x95),
+            retry_to: Some(Address::with_last_byte(0x96)),
+            retry_data: revm::primitives::bytes!("c0ffee"),
+        };
+        let ticket_id = compute_submit_retryable_ticket_id(42161, caller, &call);
+        let mut db = InMemoryDB::default();
+        seed_transaction_filter(
+            &mut db,
+            ticket_id,
+            filtered_recipient,
+            Address::with_last_byte(0x97),
+        );
+        let cfg = CfgEnv::new_with_spec(ArbSpecId::NITRO)
+            .with_chain_id(42161)
+            .with_disable_priority_fee_check(true);
+        let ctx = Context::mainnet()
+            .with_tx(ArbTransaction::<TxEnv>::default())
+            .with_cfg(cfg)
+            .with_chain(ArbChainContext::default())
+            .with_db(db);
+        let mut evm = ctx.build_arb();
+
+        let out = evm
+            .transact(make_submit_retryable_tx(caller, call))
+            .expect("filtered unscheduled submit-retryable must not halt execution");
+
+        assert!(
+            !out.result.is_success(),
+            "filtered submission must fail its receipt"
+        );
+        assert_eq!(out.result.tx_gas_used(), 0);
+        assert_eq!(out.result.logs().len(), 1, "TicketCreated is retained");
+        assert_eq!(out.result.logs()[0].topics()[1], ticket_id);
+    }
+
+    #[test]
+    fn filtered_retry_restores_escrow_and_consumes_all_remaining_gas() {
+        let caller = Address::with_last_byte(0xa1);
+        let ticket_id = B256::with_last_byte(0xa2);
+        let callvalue = U256::from(7_u64);
+        let encoded = revm::primitives::bytes!("68c0");
+        let mut db = InMemoryDB::default();
+        seed_transaction_filter(
+            &mut db,
+            keccak256(encoded.as_ref()),
+            Address::with_last_byte(0xa3),
+            Address::with_last_byte(0xa4),
+        );
+
+        let state = ArbosState::open();
+        let retryable = state.retryables.retryable(ticket_id);
+        let (_, timeout_slot) = retryable.timeout.account_and_key();
+        let (_, callvalue_slot) = retryable.callvalue.account_and_key();
+        db.insert_account_storage(
+            ARBOS_STATE_ADDRESS,
+            U256::from_be_bytes(timeout_slot.0),
+            U256::from(1_u64),
+        )
+        .expect("should seed retryable timeout");
+        db.insert_account_storage(
+            ARBOS_STATE_ADDRESS,
+            U256::from_be_bytes(callvalue_slot.0),
+            callvalue,
+        )
+        .expect("should seed retryable callvalue");
+        let escrow = retryable_escrow_address(ticket_id);
+        db.insert_account_info(
+            escrow,
+            AccountInfo {
+                balance: callvalue,
+                ..Default::default()
+            },
+        );
+        let cfg = CfgEnv::new_with_spec(ArbSpecId::NITRO)
+            .with_chain_id(42161)
+            .with_disable_priority_fee_check(true);
+        let ctx = Context::mainnet()
+            .with_tx(ArbTransaction::<TxEnv>::default())
+            .with_cfg(cfg)
+            .with_chain(ArbChainContext::default())
+            .with_db(db);
+        let mut evm = ctx.build_arb();
+
+        let out = evm
+            .transact(
+                make_retry_tx(
+                    caller,
+                    Address::with_last_byte(0xa5),
+                    ticket_id,
+                    callvalue,
+                    100_000,
+                )
+                .with_encoded_2718(encoded),
+            )
+            .expect("filtered retry must be included as a failed receipt");
+
+        assert!(!out.result.is_success(), "filtered retry receipt must fail");
+        assert_eq!(out.result.tx_gas_used(), 100_000);
+        assert_eq!(
+            out.state
+                .get(&escrow)
+                .expect("failed retry must restore the escrow")
+                .info
+                .balance,
+            callvalue
+        );
+        assert_eq!(
+            out.state
+                .get(&caller)
+                .expect("retry sender nonce update is retained")
+                .info
+                .nonce,
+            1
         );
     }
 

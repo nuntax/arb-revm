@@ -34,6 +34,7 @@ pub mod storage;
 pub mod stylus;
 mod submit_retryable_tx;
 pub mod transaction;
+mod transaction_filter;
 mod util;
 
 pub use api::{

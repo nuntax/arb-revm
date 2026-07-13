@@ -1,14 +1,10 @@
 use crate::api::exec::ArbContextTr;
-use crate::constants::FILTERED_TRANSACTIONS_STATE_ADDRESS;
-use crate::storage::{ArbosState, StorageSpace};
 use crate::transaction::ArbTxTr;
+use crate::transaction_filter::{filtered_funds_recipient_or_default, is_tx_hash_filtered};
 use revm::{
     context_interface::{ContextTr, JournalTr, Transaction, journaled_state::TransferError},
-    primitives::{Address, TxKind, U256, keccak256},
+    primitives::{TxKind, keccak256},
 };
-
-/// Nitro `filteredTransactions.presentHash` = common.BytesToHash([]byte{1}) = 1.
-const PRESENT_VALUE: U256 = U256::ONE;
 
 /// Result of applying a deposit: whether it was redirected by the on-chain transaction filter.
 pub(crate) enum DepositOutcome {
@@ -43,27 +39,11 @@ pub(crate) fn apply_deposit_tx<CTX: ArbContextTr>(ctx: &mut CTX) -> Result<Depos
     let tx_hash = ctx.tx().encoded_2718_bytes().map(keccak256);
     let mut filtered = false;
     if let Some(tx_hash) = tx_hash {
-        let arbos = ArbosState::open();
-        let is_filtered = StorageSpace::new(FILTERED_TRANSACTIONS_STATE_ADDRESS)
-            .get(tx_hash, ctx.journal_mut())
-            .map_err(|e| format!("[ARBITRUM] deposit filter read failed: {e:?}"))?
-            .data
-            == PRESENT_VALUE;
+        let is_filtered = is_tx_hash_filtered(tx_hash, ctx.journal_mut())
+            .map_err(|e| format!("[ARBITRUM] deposit filter read failed: {e}"))?;
         if is_filtered {
-            // FilteredFundsRecipientOrDefault: the configured recipient, or the network fee account
-            // when unset (Nitro arbosstate.go).
-            let recipient = arbos
-                .filtered_funds_recipient
-                .get(ctx.journal_mut())
-                .map_err(|e| format!("[ARBITRUM] filtered-funds recipient read failed: {e:?}"))?;
-            to = if recipient == Address::ZERO {
-                arbos
-                    .network_fee_account
-                    .get(ctx.journal_mut())
-                    .map_err(|e| format!("[ARBITRUM] network fee account read failed: {e:?}"))?
-            } else {
-                recipient
-            };
+            to = filtered_funds_recipient_or_default(ctx.journal_mut())
+                .map_err(|e| format!("[ARBITRUM] filtered-funds recipient read failed: {e}"))?;
             filtered = true;
         }
     }
