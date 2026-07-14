@@ -56,11 +56,11 @@ where
             FrameInput::Call(call) => call.clone(),
             _ => return None,
         };
-        let calldata = match &call.input {
-            CallInput::Bytes(bytes) => bytes.clone(),
-            // Shared-buffer calldata needs the Stylus local context (not yet wired). TODO.
-            CallInput::SharedBuffer(_) => return None,
-        };
+        // Calldata is owned `Bytes` for a top-level tx or a Stylus-hostio sub-call, but a
+        // `SharedBuffer` range into the caller frame's shared memory when a normal EVM
+        // CALL/DELEGATECALL/STATICCALL opcode targets this Stylus program. Materialize both to
+        // owned bytes now, before the WASM runs; `bytes()` copies the shared-buffer slice.
+        let calldata = call.input.bytes(&self.0.ctx);
         let target = call.target_address;
         let caller = call.caller;
         let value = call.value.get();
