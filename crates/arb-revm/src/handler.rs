@@ -323,6 +323,20 @@ where
             evm.ctx_mut().chain_mut().intrinsic_gas = init_and_floor.initial_total_gas();
             return Ok(init_and_floor);
         }
+        // Nitro subjects ArbitrumContractTx to geth's preCheck fee-cap gate: it is NOT covered by
+        // `skipTransactionChecks` (go-ethereum core/state_transition.go `preCheck` keeps the
+        // `GasFeeCap < BaseFee -> ErrFeeCapTooLow` check outside that block), so a contract tx whose
+        // gasFeeCap is below the block basefee is rejected and dropped from the block. revm
+        // classifies tx type 0x66 as `Custom` so `mainnet.validate` (below) skips its native basefee
+        // check; replicate the gate here before delegating. Without it an L2FundedByL1 contract tx
+        // with gasFeeCap=0 (funded with exactly its value) runs for free instead of being dropped,
+        // diverging the state root (robinhood 10222306). NoBaseFee lowers basefee to 0 (eth_call),
+        // where `0 < 0` is false, so this is a no-op there.
+        if evm.ctx().tx().tx_type() == ARBITRUM_CONTRACT_TX_TYPE
+            && evm.ctx().tx().max_fee_per_gas() < evm.ctx().block().basefee() as u128
+        {
+            return Err(InvalidTransaction::GasPriceLessThanBasefee.into());
+        }
         let result = self.mainnet.validate(evm)?;
         // Store intrinsic gas for use in pre_execution (gas limit enforcement)
         // and reward_beneficiary (reconstructing Nitro's computeGas).
