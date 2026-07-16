@@ -165,7 +165,18 @@ where
             }
 
             // TODO(parity): module_hash should be the activated module's hash, not the code hash.
-            let evm_data = build_evm_data(ctx, target, caller, value, code_hash, 0, program.cached);
+            // Reentrant when the acting address already has another open context span (Nitro
+            // `p.Programs[acting] > 1`); this frame's own span is included in the count.
+            let reentrant = u32::from(
+                ctx.chain()
+                    .stylus_program_spans
+                    .get(&target)
+                    .copied()
+                    .unwrap_or(0)
+                    > 1,
+            );
+            let evm_data =
+                build_evm_data(ctx, target, caller, value, code_hash, reentrant, program.cached);
             let stylus_config =
                 StylusConfig::new(params.version, params.max_stack_depth, params.ink_price);
             (serialized, compile_config, stylus_config, evm_data, gas, pages_open)
@@ -223,7 +234,7 @@ where
         let callback = move |req_type: EvmApiMethod, req_data: Vec<u8>| {
             // SAFETY: synchronous, unaliased execution within the owning frame (see above).
             let evm = unsafe { &mut *evm_ptr };
-            match req_type {
+            let out = match req_type {
                 EvmApiMethod::ContractCall
                 | EvmApiMethod::DelegateCall
                 | EvmApiMethod::StaticCall => {
@@ -233,7 +244,8 @@ where
                     evm.handle_stylus_create(contract, is_static, req_type, req_data)
                 }
                 _ => handle_request(&mut evm.0.ctx, contract, req_type, req_data),
-            }
+            };
+            out
         };
         // Erase the borrowed lifetime to 'static (sound under the synchronous-run contract).
         let callback: Arc<
@@ -383,7 +395,14 @@ where
             target_address,
             caller,
             value: CallValue::Transfer(value),
-            scheme: CallScheme::Call,
+            // Metadata only in revm's frame machinery, but the span accounting for the Stylus
+            // `reentrant` flag exempts delegate frames (they act as the parent's already-open
+            // address), so record the real scheme.
+            scheme: match req_type {
+                EvmApiMethod::DelegateCall => CallScheme::DelegateCall,
+                EvmApiMethod::StaticCall => CallScheme::StaticCall,
+                _ => CallScheme::Call,
+            },
             is_static,
             charged_new_account_state_gas: false,
         }));

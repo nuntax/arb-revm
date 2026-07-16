@@ -24,6 +24,12 @@ use revm::{
     primitives::{Address, Bytes, Log, LogData, U256},
 };
 
+use crate::{
+    chain::ArbChainContext,
+    storage::ArbosState,
+    stylus::{gas::stylus_call_cost, params::StylusParams},
+};
+
 /// Services one hostio request against the captured EVM context.
 pub type HostCallFunc = dyn Fn(EvmApiMethod, Vec<u8>) -> (Vec<u8>, VecReader, ArbGas);
 
@@ -109,7 +115,7 @@ pub fn handle_request<CTX>(
     req_data: Vec<u8>,
 ) -> (Vec<u8>, VecReader, ArbGas)
 where
-    CTX: ContextTr<Journal: JournalTr>,
+    CTX: ContextTr<Chain = ArbChainContext, Journal: JournalTr>,
 {
     let debug = std::env::var("STYLUS_GAS_DEBUG").is_ok();
     // A valid Stylus program always sends correctly-sized hostio requests. Guard the decoders
@@ -223,7 +229,34 @@ where
             (code_hash.0.to_vec(), empty_reader(), ArbGas(gas))
         }
 
-        // Not yet wired: account_code (returns code via the reader), add_pages, capture, and
+        // `pay_for_memory_grow`: the WASM grew its memory beyond the program footprint. Mirrors
+        // Nitro's `addPages` (api.go): bump the tx page counters first, then charge the memory
+        // model's cost computed against the OLD open/ever values. The page-limit penalty branch
+        // is node-config-gated off-chain behavior and does not apply to consensus execution.
+        EvmApiMethod::AddPages if req_data.len() < 2 => malformed(),
+        EvmApiMethod::AddPages => {
+            let pages = u16::from_be_bytes(req_data[..2].try_into().unwrap());
+            let Ok(params_word) = ArbosState::open().programs.read_params_word(ctx.journal_mut())
+            else {
+                return (Vec::new(), empty_reader(), ArbGas(0));
+            };
+            let params = StylusParams::from_word(&params_word);
+            let old_open = ctx.chain().stylus_pages_open;
+            let old_ever = ctx.chain().stylus_pages_ever;
+            let cost = stylus_call_cost(
+                pages,
+                old_open,
+                old_ever,
+                params.free_pages,
+                params.page_gas,
+            );
+            let new_open = old_open.saturating_add(pages);
+            ctx.chain_mut().stylus_pages_open = new_open;
+            ctx.chain_mut().stylus_pages_ever = old_ever.max(new_open);
+            (Vec::new(), empty_reader(), ArbGas(cost))
+        }
+
+        // Not yet wired: account_code (returns code via the reader), capture, and
         // the call/create family (handled by the executor's frame re-entry). TODO(stage 2).
         _ => (Vec::new(), empty_reader(), ArbGas(0)),
     };

@@ -1,4 +1,4 @@
-use revm::primitives::{B256, U256};
+use revm::primitives::{Address, B256, HashMap, U256};
 
 /// Arbitrum chain-scoped execution context carried alongside block/tx/cfg.
 ///
@@ -43,6 +43,15 @@ pub struct ArbChainContext {
     /// out-of-band (`run_exec_loop`), so the refund is captured here and folded back onto the
     /// Stylus frame's result gas (save/restore around each frame keeps nesting correct).
     pub stylus_sub_refund: i64,
+    /// Open non-delegate call-frame count per acting address for the current tx (Nitro
+    /// `TxProcessor.Programs`, maintained by `PushContract`/`PopContract`). A Stylus program
+    /// entered while its acting address already has an open span (count > 1 including its own
+    /// frame) runs with `EvmData.reentrant` set; programs branch on this (e.g. flash-loan
+    /// callbacks that require being re-entered). DELEGATECALL/CALLCODE frames act as the
+    /// parent's address, whose span is already open, and are not counted; create frames are
+    /// not counted either (EIP-3541 makes a created address never a Stylus program mid-tx and
+    /// address collisions with live code fail before a frame opens).
+    pub stylus_program_spans: HashMap<Address, u32>,
     /// A normal transaction registered in ArbOS's transaction filter. It skips EVM execution
     /// after gas charging and consumes its full gas limit.
     pub filtered_tx: bool,
@@ -71,6 +80,7 @@ impl ArbChainContext {
             stylus_pages_open: 0,
             stylus_pages_ever: 0,
             stylus_sub_refund: 0,
+            stylus_program_spans: HashMap::default(),
             filtered_tx: false,
             pending_zombie_escrow_tickets: Vec::new(),
         }
@@ -91,6 +101,7 @@ impl ArbChainContext {
         self.stylus_pages_open = 0;
         self.stylus_pages_ever = 0;
         self.stylus_sub_refund = 0;
+        self.stylus_program_spans.clear();
         self.filtered_tx = false;
     }
 
