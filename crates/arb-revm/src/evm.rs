@@ -81,8 +81,16 @@ where
         let mut instruction = EthInstructions::new_mainnet_with_spec(spec.into());
         // Arbitrum overrides NUMBER (returns the L1 block number) and BLOCKHASH (returns the
         // ArbOS-stored L1 block hash).
-        instruction.insert_instruction(opcode::NUMBER, Instruction::new(arb_block_number::<CTX>), 2);
-        instruction.insert_instruction(opcode::BLOCKHASH, Instruction::new(arb_block_hash::<CTX>), 20);
+        instruction.insert_instruction(
+            opcode::NUMBER,
+            Instruction::new(arb_block_number::<CTX>),
+            2,
+        );
+        instruction.insert_instruction(
+            opcode::BLOCKHASH,
+            Instruction::new(arb_block_hash::<CTX>),
+            20,
+        );
         Self(Evm {
             ctx,
             inspector,
@@ -261,7 +269,12 @@ where
             }
         };
         if let Some(address) = span
-            && let Some(count) = self.0.ctx.chain_mut().stylus_program_spans.get_mut(&address)
+            && let Some(count) = self
+                .0
+                .ctx
+                .chain_mut()
+                .stylus_program_spans
+                .get_mut(&address)
         {
             *count = count.saturating_sub(1);
         }
@@ -276,10 +289,7 @@ where
 fn span_address(input: &FrameInput) -> Option<Address> {
     match input {
         FrameInput::Call(call)
-            if !matches!(
-                call.scheme,
-                CallScheme::DelegateCall | CallScheme::CallCode
-            ) =>
+            if !matches!(call.scheme, CallScheme::DelegateCall | CallScheme::CallCode) =>
         {
             Some(call.target_address)
         }

@@ -12,13 +12,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use arbitrum_alloy_consensus::transactions::ArbTxEnvelope;
-use arbitrum_alloy_consensus::transactions::deposit::TxDeposit;
-use arbitrum_alloy_rpc_types::ArbTransaction as RpcArbTransaction;
 use arb_revm::replay::{
     BlockFixture, ExpectedAccountState, ExpectedTx, PrestateFixture, REPLAY_FIXTURE_SCHEMA,
     ReplayFixture, replay_fixture,
 };
+use arbitrum_alloy_consensus::transactions::ArbTxEnvelope;
+use arbitrum_alloy_consensus::transactions::deposit::TxDeposit;
+use arbitrum_alloy_rpc_types::ArbTransaction as RpcArbTransaction;
 use revm::primitives::{Address, B256, U256};
 use serde_json::{Value, json};
 
@@ -166,9 +166,8 @@ fn recorded_fixtures_replay_with_parity() {
 #[test]
 fn recorded_stylus_fixtures_replay_with_parity() {
     let dir = fixtures_dir().join("stylus");
-    let entries = fs::read_dir(&dir).unwrap_or_else(|error| {
-        panic!("read Stylus fixture directory {dir:?}: {error}")
-    });
+    let entries = fs::read_dir(&dir)
+        .unwrap_or_else(|error| panic!("read Stylus fixture directory {dir:?}: {error}"));
 
     let mut replayed = 0usize;
     for entry in entries.flatten() {
@@ -176,12 +175,10 @@ fn recorded_stylus_fixtures_replay_with_parity() {
         if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
             continue;
         }
-        let body = fs::read_to_string(&path).unwrap_or_else(|error| {
-            panic!("read Stylus fixture {path:?}: {error}")
-        });
-        let fixture: ReplayFixture = serde_json::from_str(&body).unwrap_or_else(|error| {
-            panic!("parse Stylus fixture {path:?}: {error}")
-        });
+        let body = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("read Stylus fixture {path:?}: {error}"));
+        let fixture: ReplayFixture = serde_json::from_str(&body)
+            .unwrap_or_else(|error| panic!("parse Stylus fixture {path:?}: {error}"));
 
         let report = replay_fixture(&fixture);
         assert!(

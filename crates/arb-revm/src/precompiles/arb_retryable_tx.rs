@@ -69,7 +69,8 @@ where
 {
     let call = match ArbRetryableTx::ArbRetryableTxCalls::abi_decode(input) {
         Ok(c) => c,
-        Err(_) => return gated_revert_result(gas_limit),};
+        Err(_) => return gated_revert_result(gas_limit),
+    };
 
     let state = ArbosState::open();
 
@@ -321,18 +322,19 @@ where
             // tx itself (the retry re-grows it). Without this the backlog slot, and thus the state
             // root, is too high. Model-aware: legacy uses the single gas_backlog, SingleGas/MultiGas
             // constraints use the per-constraint backlogs (Nitro `ShrinkBacklog`).
-            let actual_backlog_update_cost = match state
-                .l2_pricing
-                .shrink_backlog(donated_gas, arbos_version, ctx.journal_mut())
-            {
-                Ok(cost) => cost,
-                Err(e) => {
-                    return fatal_result(
-                        gas_limit,
-                        &format!("ArbRetryableTx: backlog error: {e}"),
-                    );
-                }
-            };
+            let actual_backlog_update_cost =
+                match state
+                    .l2_pricing
+                    .shrink_backlog(donated_gas, arbos_version, ctx.journal_mut())
+                {
+                    Ok(cost) => cost,
+                    Err(e) => {
+                        return fatal_result(
+                            gas_limit,
+                            &format!("ArbRetryableTx: backlog error: {e}"),
+                        );
+                    }
+                };
 
             // The redeem prepays a full StorageWrite (20000) for the trailing ShrinkBacklog SSTORE.
             // At v40-59 the actual cost depends on the active model and on every post-shrink
@@ -368,7 +370,9 @@ where
             let _ = gas.record_regular_cost(consumed);
             InterpreterResult {
                 result: InstructionResult::Return,
-                output: Bytes::from(alloy_core::sol_types::SolValue::abi_encode(&(retry_tx_hash,))),
+                output: Bytes::from(alloy_core::sol_types::SolValue::abi_encode(&(
+                    retry_tx_hash,
+                ))),
                 gas,
             }
         }

@@ -137,7 +137,11 @@ where
             } else {
                 WARM_STORAGE_READ_COST
             };
-            (loaded.0.to_be_bytes::<32>().to_vec(), empty_reader(), ArbGas(gas))
+            (
+                loaded.0.to_be_bytes::<32>().to_vec(),
+                empty_reader(),
+                ArbGas(gas),
+            )
         }
 
         // SSTORE batch: req = gas_left(8) ++ [key(32) ++ value(32)]* → status + total gas.
@@ -153,10 +157,10 @@ where
                     // normally journals this refund. Preserve the full signed transition
                     // refund so clears and same-transaction restores agree with Nitro's StateDB.
                     let eth_spec: SpecId = ctx.cfg().spec().into();
-                    let refund = ctx.cfg().gas_params().sstore_refund(
-                        eth_spec.is_enabled_in(SpecId::ISTANBUL),
-                        &load.data,
-                    );
+                    let refund = ctx
+                        .cfg()
+                        .gas_params()
+                        .sstore_refund(eth_spec.is_enabled_in(SpecId::ISTANBUL), &load.data);
                     ctx.chain_mut().stylus_refund += refund;
                     total += sstore_cost(&load.data, load.is_cold);
                 }
@@ -168,7 +172,11 @@ where
         EvmApiMethod::GetTransientBytes32 if req_data.len() < 32 => malformed(),
         EvmApiMethod::GetTransientBytes32 => {
             let value = ctx.journal_mut().tload(contract, word(&req_data));
-            (value.to_be_bytes::<32>().to_vec(), empty_reader(), ArbGas(0))
+            (
+                value.to_be_bytes::<32>().to_vec(),
+                empty_reader(),
+                ArbGas(0),
+            )
         }
 
         // TSTORE: req = key(32) ++ value(32) → status.
@@ -217,7 +225,11 @@ where
             } else {
                 WARM_STORAGE_READ_COST
             };
-            (balance.to_be_bytes::<32>().to_vec(), empty_reader(), ArbGas(gas))
+            (
+                balance.to_be_bytes::<32>().to_vec(),
+                empty_reader(),
+                ArbGas(gas),
+            )
         }
 
         // EXTCODEHASH: req = address(20) → codehash(32) + access gas.
@@ -244,7 +256,9 @@ where
         EvmApiMethod::AddPages if req_data.len() < 2 => malformed(),
         EvmApiMethod::AddPages => {
             let pages = u16::from_be_bytes(req_data[..2].try_into().unwrap());
-            let Ok(params_word) = ArbosState::open().programs.read_params_word(ctx.journal_mut())
+            let Ok(params_word) = ArbosState::open()
+                .programs
+                .read_params_word(ctx.journal_mut())
             else {
                 return (Vec::new(), empty_reader(), ArbGas(0));
             };

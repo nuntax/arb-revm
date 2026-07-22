@@ -46,7 +46,9 @@ impl StylusParams {
 
 /// Read a big-endian unsigned integer of `len` bytes at `off`.
 fn be_uint(word: &[u8; 32], (off, len): (usize, usize)) -> u64 {
-    word[off..off + len].iter().fold(0u64, |acc, &b| (acc << 8) | b as u64)
+    word[off..off + len]
+        .iter()
+        .fold(0u64, |acc, &b| (acc << 8) | b as u64)
 }
 
 fn be_u16(word: &[u8; 32], off: usize) -> u16 {

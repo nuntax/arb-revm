@@ -12,7 +12,8 @@ where
 {
     let call = match ArbOwnerPublic::ArbOwnerPublicCalls::abi_decode(input) {
         Ok(c) => c,
-        Err(_) => return gated_revert_result(gas_limit),};
+        Err(_) => return gated_revert_result(gas_limit),
+    };
 
     let state = ArbosState::open();
 
@@ -217,12 +218,14 @@ where
                     return revert_result(
                         gas_limit,
                         &format!("ArbOwnerPublic: getMaxStylusContractFragments error: {e}"),
-                    )
+                    );
                 }
             };
-            let max_fragments =
-                unpack_uint(&word, layout::MAX_FRAGMENT_COUNT.0, layout::MAX_FRAGMENT_COUNT.1)
-                    as u8;
+            let max_fragments = unpack_uint(
+                &word,
+                layout::MAX_FRAGMENT_COUNT.0,
+                layout::MAX_FRAGMENT_COUNT.1,
+            ) as u8;
             ok_result(
                 gas_limit,
                 alloy_core::sol_types::SolValue::abi_encode(&(u16::from(max_fragments),)),

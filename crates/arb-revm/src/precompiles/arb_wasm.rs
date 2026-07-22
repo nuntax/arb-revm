@@ -82,33 +82,54 @@ where
     let result = match call {
         ArbWasm::ArbWasmCalls::stylusVersion(_) => {
             let v = unpack_uint(&word, layout::VERSION.0, layout::VERSION.1) as u16;
-            ok_result(gas_limit, alloy_core::sol_types::SolValue::abi_encode(&(v,)))
+            ok_result(
+                gas_limit,
+                alloy_core::sol_types::SolValue::abi_encode(&(v,)),
+            )
         }
         ArbWasm::ArbWasmCalls::inkPrice(_) => {
             let v = unpack_uint(&word, layout::INK_PRICE.0, layout::INK_PRICE.1);
-            ok_result(gas_limit, alloy_core::sol_types::SolValue::abi_encode(&(v,)))
+            ok_result(
+                gas_limit,
+                alloy_core::sol_types::SolValue::abi_encode(&(v,)),
+            )
         }
         ArbWasm::ArbWasmCalls::maxStackDepth(_) => {
             let v = unpack_uint(&word, layout::MAX_STACK_DEPTH.0, layout::MAX_STACK_DEPTH.1);
-            ok_result(gas_limit, alloy_core::sol_types::SolValue::abi_encode(&(v,)))
+            ok_result(
+                gas_limit,
+                alloy_core::sol_types::SolValue::abi_encode(&(v,)),
+            )
         }
         ArbWasm::ArbWasmCalls::freePages(_) => {
             let v = unpack_uint(&word, layout::FREE_PAGES.0, layout::FREE_PAGES.1) as u16;
-            ok_result(gas_limit, alloy_core::sol_types::SolValue::abi_encode(&(v,)))
+            ok_result(
+                gas_limit,
+                alloy_core::sol_types::SolValue::abi_encode(&(v,)),
+            )
         }
         ArbWasm::ArbWasmCalls::pageGas(_) => {
             let v = unpack_uint(&word, layout::PAGE_GAS.0, layout::PAGE_GAS.1) as u16;
-            ok_result(gas_limit, alloy_core::sol_types::SolValue::abi_encode(&(v,)))
+            ok_result(
+                gas_limit,
+                alloy_core::sol_types::SolValue::abi_encode(&(v,)),
+            )
         }
         ArbWasm::ArbWasmCalls::pageRamp(_) => {
             // PageRamp is NOT stored in the packed word.  Nitro initialises the
             // struct field with the constant and never persists it.
             let v = layout::PAGE_RAMP_CONSTANT;
-            ok_result(gas_limit, alloy_core::sol_types::SolValue::abi_encode(&(v,)))
+            ok_result(
+                gas_limit,
+                alloy_core::sol_types::SolValue::abi_encode(&(v,)),
+            )
         }
         ArbWasm::ArbWasmCalls::pageLimit(_) => {
             let v = unpack_uint(&word, layout::PAGE_LIMIT.0, layout::PAGE_LIMIT.1) as u16;
-            ok_result(gas_limit, alloy_core::sol_types::SolValue::abi_encode(&(v,)))
+            ok_result(
+                gas_limit,
+                alloy_core::sol_types::SolValue::abi_encode(&(v,)),
+            )
         }
         ArbWasm::ArbWasmCalls::minInitGas(_) => {
             if arbos_version < ARBOS_VERSION_STYLUS_CHARGING_FIXES {
@@ -133,23 +154,41 @@ where
             }
         }
         ArbWasm::ArbWasmCalls::initCostScalar(_) => {
-            let units =
-                unpack_uint(&word, layout::INIT_COST_SCALAR.0, layout::INIT_COST_SCALAR.1) as u64;
+            let units = unpack_uint(
+                &word,
+                layout::INIT_COST_SCALAR.0,
+                layout::INIT_COST_SCALAR.1,
+            ) as u64;
             let v = units.saturating_mul(COST_SCALAR_PERCENT_UNITS);
-            ok_result(gas_limit, alloy_core::sol_types::SolValue::abi_encode(&(v,)))
+            ok_result(
+                gas_limit,
+                alloy_core::sol_types::SolValue::abi_encode(&(v,)),
+            )
         }
         ArbWasm::ArbWasmCalls::expiryDays(_) => {
             let v = unpack_uint(&word, layout::EXPIRY_DAYS.0, layout::EXPIRY_DAYS.1) as u16;
-            ok_result(gas_limit, alloy_core::sol_types::SolValue::abi_encode(&(v,)))
+            ok_result(
+                gas_limit,
+                alloy_core::sol_types::SolValue::abi_encode(&(v,)),
+            )
         }
         ArbWasm::ArbWasmCalls::keepaliveDays(_) => {
             let v = unpack_uint(&word, layout::KEEPALIVE_DAYS.0, layout::KEEPALIVE_DAYS.1) as u16;
-            ok_result(gas_limit, alloy_core::sol_types::SolValue::abi_encode(&(v,)))
+            ok_result(
+                gas_limit,
+                alloy_core::sol_types::SolValue::abi_encode(&(v,)),
+            )
         }
         ArbWasm::ArbWasmCalls::blockCacheSize(_) => {
-            let v =
-                unpack_uint(&word, layout::BLOCK_CACHE_SIZE.0, layout::BLOCK_CACHE_SIZE.1) as u16;
-            ok_result(gas_limit, alloy_core::sol_types::SolValue::abi_encode(&(v,)))
+            let v = unpack_uint(
+                &word,
+                layout::BLOCK_CACHE_SIZE.0,
+                layout::BLOCK_CACHE_SIZE.1,
+            ) as u16;
+            ok_result(
+                gas_limit,
+                alloy_core::sol_types::SolValue::abi_encode(&(v,)),
+            )
         }
         ArbWasm::ArbWasmCalls::codehashVersion(c) => {
             codehash_version(ctx, gas_limit, &word, c.codehash)
@@ -157,7 +196,14 @@ where
         ArbWasm::ArbWasmCalls::activateProgram(_c) => {
             #[cfg(feature = "stylus")]
             {
-                activate_program(ctx, call_inputs, gas_limit, arbos_version, &word, _c.program)
+                activate_program(
+                    ctx,
+                    call_inputs,
+                    gas_limit,
+                    arbos_version,
+                    &word,
+                    _c.program,
+                )
             }
             #[cfg(not(feature = "stylus"))]
             {
@@ -322,13 +368,14 @@ where
     let time = ctx.block_timestamp();
 
     // Data fee for the estimated asm size (advances + persists the demand model).
-    let data_fee = match state
-        .programs
-        .update_data_model(stylus_data.asm_estimate, time, ctx.journal_mut())
-    {
-        Ok(f) => f,
-        Err(e) => return revert_result(gas_limit, &format!("ArbWasm: data pricer error: {e}")),
-    };
+    let data_fee =
+        match state
+            .programs
+            .update_data_model(stylus_data.asm_estimate, time, ctx.journal_mut())
+        {
+            Ok(f) => f,
+            Err(e) => return revert_result(gas_limit, &format!("ArbWasm: data pricer error: {e}")),
+        };
 
     // Persist the module hash + program activation record.
     if let Err(e) = state
@@ -348,7 +395,10 @@ where
         asm_estimate_kb,
         cached: false,
     };
-    if let Err(e) = state.programs.write_program(code_hash, &info, ctx.journal_mut()) {
+    if let Err(e) = state
+        .programs
+        .write_program(code_hash, &info, ctx.journal_mut())
+    {
         return revert_result(gas_limit, &format!("ArbWasm: program write error: {e}"));
     }
 
@@ -357,7 +407,10 @@ where
     let value = call_inputs.value;
     let arb_wasm_addr = call_inputs.bytecode_address;
     if value < data_fee {
-        return revert_result(gas_limit, "ArbWasm: insufficient value for activation data fee");
+        return revert_result(
+            gas_limit,
+            "ArbWasm: insufficient value for activation data fee",
+        );
     }
     let network = match state.network_fee_account.get(ctx.journal_mut()) {
         Ok(a) => a,
@@ -370,7 +423,10 @@ where
         }
     }
     let repay = value - data_fee;
-    match ctx.journal_mut().transfer(arb_wasm_addr, call_inputs.caller, repay) {
+    match ctx
+        .journal_mut()
+        .transfer(arb_wasm_addr, call_inputs.caller, repay)
+    {
         Ok(None) => {}
         Ok(Some(_)) | Err(_) => {
             return revert_result(gas_limit, "ArbWasm: activation refund transfer failed");

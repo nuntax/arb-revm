@@ -38,10 +38,8 @@
 //! - v60: MaxFragmentCount → 2 (StylusContractLimit field added).
 
 use revm::{
-    context_interface::{
-        journaled_state::account::JournaledAccountTr, ContextTr, JournalTr,
-    },
-    primitives::{address, Address, B256, Bytes, KECCAK_EMPTY, U256},
+    context_interface::{ContextTr, JournalTr, journaled_state::account::JournaledAccountTr},
+    primitives::{Address, B256, Bytes, KECCAK_EMPTY, U256, address},
     state::Bytecode,
 };
 
@@ -82,9 +80,7 @@ pub struct ArbGenesisAccount {
 /// filtered out so only genuine trie entries appear in the output.
 ///
 /// The returned `Vec` is sorted by address for deterministic output.
-pub fn arb_genesis_accounts(
-    config: &ArbosInitConfig,
-) -> Result<Vec<ArbGenesisAccount>, String> {
+pub fn arb_genesis_accounts(config: &ArbosInitConfig) -> Result<Vec<ArbGenesisAccount>, String> {
     use crate::api::default_ctx::{ArbContext, DefaultArb};
     use revm::database_interface::EmptyDB;
 
@@ -102,9 +98,7 @@ pub fn arb_genesis_accounts(
 /// [`ArbGenesisAccount`] list: drops fully-empty accounts (no code/balance/nonce/storage, they
 /// produce no trie entry per EIP-161), filters zero-valued storage slots, and sorts both the
 /// per-account storage (by slot) and the account list (by address) for deterministic output.
-fn evm_state_to_genesis_accounts(
-    evm_state: revm::state::EvmState,
-) -> Vec<ArbGenesisAccount> {
+fn evm_state_to_genesis_accounts(evm_state: revm::state::EvmState) -> Vec<ArbGenesisAccount> {
     let mut accounts: Vec<ArbGenesisAccount> = evm_state
         .iter()
         .filter_map(|(addr, account)| {
@@ -281,11 +275,19 @@ where
         rec.num_tries.set(0, journal).map_err(e("numTries"))?;
         rec.from.set(r.from, journal).map_err(e("from"))?;
         rec.set_to(r.to, journal).map_err(e("to"))?;
-        rec.callvalue.set(r.callvalue, journal).map_err(e("callvalue"))?;
-        rec.beneficiary.set(r.beneficiary, journal).map_err(e("beneficiary"))?;
+        rec.callvalue
+            .set(r.callvalue, journal)
+            .map_err(e("callvalue"))?;
+        rec.beneficiary
+            .set(r.beneficiary, journal)
+            .map_err(e("beneficiary"))?;
         rec.timeout.set(r.timeout, journal).map_err(e("timeout"))?;
-        rec.timeout_windows_left.set(0, journal).map_err(e("timeoutWindowsLeft"))?;
-        rec.calldata.set_fresh(r.calldata.as_ref(), journal).map_err(e("calldata"))?;
+        rec.timeout_windows_left
+            .set(0, journal)
+            .map_err(e("timeoutWindowsLeft"))?;
+        rec.calldata
+            .set_fresh(r.calldata.as_ref(), journal)
+            .map_err(e("calldata"))?;
         state
             .retryables
             .timeout_queue
@@ -312,7 +314,10 @@ where
                 false,
             )
             .map_err(|e| {
-                format!("[ARBITRUM] failed to write storage for {}: {e:?}", acct.address)
+                format!(
+                    "[ARBITRUM] failed to write storage for {}: {e:?}",
+                    acct.address
+                )
             })?;
         }
     }
@@ -323,7 +328,11 @@ where
 
 /// Adds `amount` to `addr`'s balance (genesis credit), creating + touching the account. Mirrors
 /// geth `statedb.AddBalance` as used by Nitro's retryable init.
-fn credit_balance<J: JournalTr>(journal: &mut J, addr: Address, amount: U256) -> Result<(), String> {
+fn credit_balance<J: JournalTr>(
+    journal: &mut J,
+    addr: Address,
+    amount: U256,
+) -> Result<(), String> {
     let mut loaded = journal
         .load_account_mut(addr)
         .map_err(|e| format!("[ARBITRUM] failed to load account {addr} for credit: {e}"))?;
@@ -369,24 +378,92 @@ const PRECOMPILE_FAKE_CODE: [u8; 1] = [0xfe];
 /// (ArbDebug); it does NOT affect the genesis install, which mirrors Nitro's version-0 loop and
 /// installs every `min_version <= initial_arbos_version` entry, ArbDebug included.
 const ARBOS_PRECOMPILES: &[(Address, u64, bool)] = &[
-    (address!("0x0000000000000000000000000000000000000064"), 0, false), // ArbSys
-    (address!("0x0000000000000000000000000000000000000065"), 0, false), // ArbInfo
-    (address!("0x0000000000000000000000000000000000000066"), 0, false), // ArbAddressTable
-    (address!("0x0000000000000000000000000000000000000067"), 0, false), // ArbBLS
-    (address!("0x0000000000000000000000000000000000000068"), 0, false), // ArbFunctionTable
-    (address!("0x0000000000000000000000000000000000000069"), 0, false), // ArbosTest
-    (address!("0x000000000000000000000000000000000000006b"), 0, false), // ArbOwnerPublic
-    (address!("0x000000000000000000000000000000000000006c"), 0, false), // ArbGasInfo
-    (address!("0x000000000000000000000000000000000000006d"), 0, false), // ArbAggregator
-    (address!("0x000000000000000000000000000000000000006e"), 0, false), // ArbRetryableTx
-    (address!("0x000000000000000000000000000000000000006f"), 0, false), // ArbStatistics
-    (address!("0x0000000000000000000000000000000000000070"), 0, false), // ArbOwner
-    (address!("0x0000000000000000000000000000000000000071"), 30, false), // ArbWasm
-    (address!("0x0000000000000000000000000000000000000072"), 30, false), // ArbWasmCache
-    (address!("0x0000000000000000000000000000000000000073"), 41, false), // ArbNativeTokenManager
-    (address!("0x0000000000000000000000000000000000000074"), 60, false), // ArbFilteredTransactionsManager
-    (address!("0x00000000000000000000000000000000000000ff"), 0, true),  // ArbDebug (debug only)
-    (ARBOS_ACTS_ADDRESS, 0, false),                                      // ArbosActs (0xa4b05)
+    (
+        address!("0x0000000000000000000000000000000000000064"),
+        0,
+        false,
+    ), // ArbSys
+    (
+        address!("0x0000000000000000000000000000000000000065"),
+        0,
+        false,
+    ), // ArbInfo
+    (
+        address!("0x0000000000000000000000000000000000000066"),
+        0,
+        false,
+    ), // ArbAddressTable
+    (
+        address!("0x0000000000000000000000000000000000000067"),
+        0,
+        false,
+    ), // ArbBLS
+    (
+        address!("0x0000000000000000000000000000000000000068"),
+        0,
+        false,
+    ), // ArbFunctionTable
+    (
+        address!("0x0000000000000000000000000000000000000069"),
+        0,
+        false,
+    ), // ArbosTest
+    (
+        address!("0x000000000000000000000000000000000000006b"),
+        0,
+        false,
+    ), // ArbOwnerPublic
+    (
+        address!("0x000000000000000000000000000000000000006c"),
+        0,
+        false,
+    ), // ArbGasInfo
+    (
+        address!("0x000000000000000000000000000000000000006d"),
+        0,
+        false,
+    ), // ArbAggregator
+    (
+        address!("0x000000000000000000000000000000000000006e"),
+        0,
+        false,
+    ), // ArbRetryableTx
+    (
+        address!("0x000000000000000000000000000000000000006f"),
+        0,
+        false,
+    ), // ArbStatistics
+    (
+        address!("0x0000000000000000000000000000000000000070"),
+        0,
+        false,
+    ), // ArbOwner
+    (
+        address!("0x0000000000000000000000000000000000000071"),
+        30,
+        false,
+    ), // ArbWasm
+    (
+        address!("0x0000000000000000000000000000000000000072"),
+        30,
+        false,
+    ), // ArbWasmCache
+    (
+        address!("0x0000000000000000000000000000000000000073"),
+        41,
+        false,
+    ), // ArbNativeTokenManager
+    (
+        address!("0x0000000000000000000000000000000000000074"),
+        60,
+        false,
+    ), // ArbFilteredTransactionsManager
+    (
+        address!("0x00000000000000000000000000000000000000ff"),
+        0,
+        true,
+    ), // ArbDebug (debug only)
+    (ARBOS_ACTS_ADDRESS, 0, false), // ArbosActs (0xa4b05)
 ];
 
 /// Install `[INVALID]` code for every non-debug precompile introduced at exactly `version`.
@@ -407,7 +484,10 @@ pub(crate) fn install_precompiles_introduced_at<J: JournalTr>(
             journal
                 .load_account_mut(*addr)
                 .map_err(|e| format!("[ARBITRUM] failed to load precompile account {addr}: {e}"))?;
-            journal.set_code(*addr, Bytecode::new_raw(PRECOMPILE_FAKE_CODE.to_vec().into()));
+            journal.set_code(
+                *addr,
+                Bytecode::new_raw(PRECOMPILE_FAKE_CODE.to_vec().into()),
+            );
         }
     }
     Ok(())
@@ -478,7 +558,10 @@ pub fn initialize_arbos_state<J: JournalTr>(
         journal
             .load_account_mut(*addr)
             .map_err(|e| format!("[ARBITRUM] failed to load precompile account {addr}: {e}"))?;
-        journal.set_code(*addr, Bytecode::new_raw(PRECOMPILE_FAKE_CODE.to_vec().into()));
+        journal.set_code(
+            *addr,
+            Bytecode::new_raw(PRECOMPILE_FAKE_CODE.to_vec().into()),
+        );
     }
 
     // 2. Top-level metadata. Version starts at 1 and is advanced by the upgrade cascade below.
@@ -580,7 +663,7 @@ pub fn initialize_arbos_state<J: JournalTr>(
     //    UpgradeArbosVersion(desired, firstTime=true)). See the module note on Stylus state.
     if config.initial_arbos_version > 1 {
         // Genesis is Nitro's firstTime cascade: first_time = true.
-        upgrade_arbos_version(1, config.initial_arbos_version, true, &state, journal)?;
+        upgrade_arbos_version(1, config.initial_arbos_version, true, state, journal)?;
     }
 
     // 9. firstTime block (Nitro arbosState.go UpgradeArbosVersion lines 519-526): runs ONCE
@@ -595,7 +678,10 @@ pub fn initialize_arbos_state<J: JournalTr>(
         // perBatchGasCost = InitialPerBatchGasCostV6 (100_000), ONLY for target < 11; at >= 11 the
         // v11 cascade step already set it to the V12 value (210_000).
         if config.initial_arbos_version < 11 {
-            let _ = state.l1_pricing.per_batch_gas_cost.set(100_000_i64, journal);
+            let _ = state
+                .l1_pricing
+                .per_batch_gas_cost
+                .set(100_000_i64, journal);
         }
         // InitialEquilibrationUnitsV6 = TxDataNonZeroGasEIP2028(16) * 10_000_000.
         let _ = state
@@ -779,7 +865,12 @@ mod tests {
         let arb_debug = address!("0x00000000000000000000000000000000000000ff");
         let acct = j.load_account(arb_debug).unwrap();
         assert_eq!(
-            acct.data.info.code.clone().unwrap_or_default().original_byte_slice(),
+            acct.data
+                .info
+                .code
+                .clone()
+                .unwrap_or_default()
+                .original_byte_slice(),
             &PRECOMPILE_FAKE_CODE,
             "ArbDebug (0xff) must be installed at genesis on every chain"
         );
@@ -793,7 +884,11 @@ mod tests {
         let state = ArbosState::open();
         let j = ctx.journal_mut();
 
-        assert_eq!(state.arbos_version.get(j).unwrap(), 11, "version reaches 11");
+        assert_eq!(
+            state.arbos_version.get(j).unwrap(),
+            11,
+            "version reaches 11"
+        );
         // v>=2 => network fee account = chain owner.
         assert_eq!(
             state.network_fee_account.get(j).unwrap(),
@@ -887,10 +982,7 @@ mod tests {
             &[0xfe_u8],
             "ArbSys must have code [0xfe]"
         );
-        assert!(
-            arb_sys.storage.is_empty(),
-            "ArbSys must have empty storage"
-        );
+        assert!(arb_sys.storage.is_empty(), "ArbSys must have empty storage");
 
         // --- (5) Determinism: two independent calls yield identical output ---
         let accounts2 = arb_genesis_accounts(&config).expect("genesis accounts v11 second call");

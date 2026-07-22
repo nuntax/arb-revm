@@ -86,7 +86,10 @@ pub(crate) fn apply_retry_tx_post_execution<CTX: ArbContextTr>(
     // Was this ticket's escrow destructed by a same-block submit (pre-Stylus, zero callvalue)?
     // If so, a *successful* redeem resurrects it as a present-but-empty "zombie"; a failed one
     // leaves it absent. Read before borrowing the journal (see submit_retryable_tx.rs).
-    let zombie_eligible = ctx.chain().pending_zombie_escrow_tickets.contains(&ticket_id);
+    let zombie_eligible = ctx
+        .chain()
+        .pending_zombie_escrow_tickets
+        .contains(&ticket_id);
 
     let arbos_state = ArbosState::open();
     let journal = ctx.journal_mut();
@@ -114,7 +117,9 @@ pub(crate) fn apply_retry_tx_post_execution<CTX: ArbContextTr>(
         if zombie_eligible {
             let escrow = retryable_escrow_address(ticket_id);
             journal.load_account(escrow).map_err(|err| {
-                format!("[ARBITRUM] failed to load retryable escrow for zombie materialization: {err}")
+                format!(
+                    "[ARBITRUM] failed to load retryable escrow for zombie materialization: {err}"
+                )
             })?;
             if let Some(escrow_account) = journal.evm_state_mut().get_mut(&escrow) {
                 escrow_account.mark_created();

@@ -91,10 +91,10 @@ fn encode_tx_for_l1_cost<T: Transaction>(tx: &T) -> Vec<u8> {
                     &to_bytes_owned,
                     value_bytes,
                     &data,
-                    &[],              // access_list (empty → 0xc0 list)
-                    &[0_u8],          // sig_y_parity
-                    &[0_u8; 32],      // sig_r
-                    &[0_u8; 32],      // sig_s
+                    &[],         // access_list (empty → 0xc0 list)
+                    &[0_u8],     // sig_y_parity
+                    &[0_u8; 32], // sig_r
+                    &[0_u8; 32], // sig_s
                 ],
             );
             out
@@ -148,7 +148,10 @@ fn encode_tx_for_l1_cost<T: Transaction>(tx: &T) -> Vec<u8> {
 /// Minimal RLP list encoder: `rlp_list_header(payload_len) ++ items...`
 fn rlp_encode_list(out: &mut Vec<u8>, items: &[&[u8]]) {
     // Compute payload: each item is rlp_encode_bytes(item)
-    let payload: Vec<u8> = items.iter().flat_map(|item| rlp_encode_bytes(item)).collect();
+    let payload: Vec<u8> = items
+        .iter()
+        .flat_map(|item| rlp_encode_bytes(item))
+        .collect();
     // Write list header
     rlp_write_length(out, payload.len(), 0xC0);
     out.extend_from_slice(&payload);

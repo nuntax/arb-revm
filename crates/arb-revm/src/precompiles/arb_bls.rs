@@ -8,11 +8,7 @@ use revm::interpreter::InterpreterResult;
 /// occupy address 0x67 in the registry.  Any call is treated as a call to a
 /// contract that exists but has no matching selector: return empty bytes with
 /// gas refunded, matching Nitro's "no method found" revert path.
-pub(super) fn run_arb_bls<CTX>(
-    _ctx: &mut CTX,
-    _input: &[u8],
-    gas_limit: u64,
-) -> InterpreterResult
+pub(super) fn run_arb_bls<CTX>(_ctx: &mut CTX, _input: &[u8], gas_limit: u64) -> InterpreterResult
 where
     CTX: ArbPrecompileCtx,
 {

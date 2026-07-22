@@ -108,7 +108,8 @@ impl L2Pricing {
     pub fn open(storage: &StorageSpace) -> Self {
         let gas_constraints = storage.open_subspace_with_key(GAS_CONSTRAINTS_KEY);
         let multi_gas_constraints = storage.open_subspace_with_key(MULTI_GAS_CONSTRAINTS_KEY);
-        let multi_gas_fees = MultiGasFees::open(&storage.open_subspace_with_key(MULTI_GAS_FEES_KEY));
+        let multi_gas_fees =
+            MultiGasFees::open(&storage.open_subspace_with_key(MULTI_GAS_FEES_KEY));
         Self {
             speed_limit_per_second: storage
                 .storage_backed(L2PricingOffset::SpeedLimitPerSecond as u8),
@@ -155,9 +156,10 @@ impl L2Pricing {
             let constraint = self.open_multi_gas_constraint(i);
             let target = constraint.target.get(journal)?;
             let backlog = constraint.backlog.get(journal)?;
-            constraint
-                .backlog
-                .set(backlog.saturating_sub(time_passed.saturating_mul(target)), journal)?;
+            constraint.backlog.set(
+                backlog.saturating_sub(time_passed.saturating_mul(target)),
+                journal,
+            )?;
         }
 
         let exponents = self.multi_gas_constraint_exponents(journal)?;
@@ -230,7 +232,11 @@ impl L2Pricing {
         Ok(())
     }
 
-    fn update_pricing_model_legacy<J: ArbJournal>(&self, time_passed: u64, journal: &mut J) -> Result<()> {
+    fn update_pricing_model_legacy<J: ArbJournal>(
+        &self,
+        time_passed: u64,
+        journal: &mut J,
+    ) -> Result<()> {
         let speed_limit = self.speed_limit_per_second.get(journal)?;
         let gas_to_shrink = time_passed.saturating_mul(speed_limit);
         let current_backlog = self.gas_backlog.get(journal)?;
@@ -293,7 +299,10 @@ impl L2Pricing {
 
         let min_base_fee = self.min_base_fee_wei.get(journal)?;
         let next_base_fee = if total_exponent_bips > 0 {
-            big_mul_by_bips(min_base_fee, approx_exp_basis_points(total_exponent_bips, 4))
+            big_mul_by_bips(
+                min_base_fee,
+                approx_exp_basis_points(total_exponent_bips, 4),
+            )
         } else {
             min_base_fee
         };
@@ -359,8 +368,8 @@ impl L2Pricing {
         let model = self.gas_model(arbos_version, journal)?;
         // Redeem manually charges this fixed amount and disables storage metering before calling
         // ShrinkBacklog at v60+, regardless of which pricing model is active.
-        let fixed_cost = (arbos_version >= ARBOS_MULTI_GAS_CONSTRAINTS_VERSION)
-            .then_some(READ + WRITE);
+        let fixed_cost =
+            (arbos_version >= ARBOS_MULTI_GAS_CONSTRAINTS_VERSION).then_some(READ + WRITE);
         match model {
             GasModel::Legacy => {
                 let current = self.gas_backlog.get(journal)?;
@@ -382,12 +391,9 @@ impl L2Pricing {
                     let constraint = self.open_gas_constraint(i);
                     let backlog = constraint.backlog.get(journal)?;
                     let updated = backlog.saturating_sub(gas);
-                    constraint
-                        .backlog
-                        .set(updated, journal)?;
-                    metered_cost = metered_cost.saturating_add(
-                        READ + if updated == 0 { WRITE_ZERO } else { WRITE },
-                    );
+                    constraint.backlog.set(updated, journal)?;
+                    metered_cost = metered_cost
+                        .saturating_add(READ + if updated == 0 { WRITE_ZERO } else { WRITE });
                 }
                 Ok(fixed_cost.unwrap_or(metered_cost))
             }
@@ -520,7 +526,9 @@ impl L2Pricing {
             .storage_backed::<u64>(SUB_STORAGE_VECTOR_LENGTH_OFFSET)
             .set(length + 1, journal)?;
         constraint.target.set(target, journal)?;
-        constraint.adjustment_window.set(adjustment_window, journal)?;
+        constraint
+            .adjustment_window
+            .set(adjustment_window, journal)?;
         constraint.backlog.set(backlog, journal)?;
         Ok(())
     }
@@ -640,7 +648,10 @@ mod tests {
         let legacy_journal = legacy_ctx.journal_mut();
         let legacy = &ArbosState::open().l2_pricing;
         legacy.gas_backlog.set(1_000, legacy_journal).unwrap();
-        assert_eq!(legacy.shrink_backlog(100, 49, legacy_journal).unwrap(), 20_800);
+        assert_eq!(
+            legacy.shrink_backlog(100, 49, legacy_journal).unwrap(),
+            20_800
+        );
 
         let mut v50_ctx = fresh();
         let v50_journal = v50_ctx.journal_mut();
@@ -654,7 +665,8 @@ mod tests {
         let v51_journal = v51_ctx.journal_mut();
         let v51 = &ArbosState::open().l2_pricing;
         for backlog in [50, 100, 1_000] {
-            v51.add_gas_constraint(100, 10, backlog, v51_journal).unwrap();
+            v51.add_gas_constraint(100, 10, backlog, v51_journal)
+                .unwrap();
         }
         // Two constraints become zero (5800 each) and one remains nonzero (20800), plus the two
         // vector-length reads. The 64000 maximum reservation refunds the exact 30000 difference.
@@ -678,7 +690,11 @@ mod tests {
             .unwrap();
 
         let error = pricing.grow_backlog(100, 60, journal).unwrap_err();
-        assert!(error.to_string().contains("per-resource EVM gas accounting"));
+        assert!(
+            error
+                .to_string()
+                .contains("per-resource EVM gas accounting")
+        );
         assert_eq!(
             pricing
                 .open_multi_gas_constraint(0)

@@ -267,7 +267,8 @@ where
     }
 
     fn debit_balance(&mut self, account: Address, amount: U256) -> Result<bool, Self::Error> {
-        let mut acct = self.load_account_mut_skip_cold_load(account, false)
+        let mut acct = self
+            .load_account_mut_skip_cold_load(account, false)
             .map_err(|e| e.unwrap_db_error())?;
         Ok(acct.data.decr_balance(amount))
     }
@@ -329,11 +330,17 @@ impl ArbJournal for ArbInternals<'_, '_> {
 
     fn account_code(&mut self, account: Address) -> Result<Bytes, Self::Error> {
         let acct = self.0.load_account_code(account)?;
-        Ok(acct.data.code().map(|c| c.original_bytes()).unwrap_or_default())
+        Ok(acct
+            .data
+            .code()
+            .map(|c| c.original_bytes())
+            .unwrap_or_default())
     }
 
     fn debit_balance(&mut self, account: Address, amount: U256) -> Result<bool, Self::Error> {
-        let mut acct = self.0.load_account_mut_skip_cold_load(account, false)
+        let mut acct = self
+            .0
+            .load_account_mut_skip_cold_load(account, false)
             .map_err(|e| e.unwrap_db_error())?;
         Ok(acct.data.decr_balance(amount))
     }
@@ -475,7 +482,10 @@ impl<'a, 'b> ArbNodeCtx<'a, 'b> {
     /// `EvmInternals` does not expose the EVM call depth, so it is passed in. It is best-effort on
     /// this path (the alloy-evm `PrecompileInput` carries no depth), see `ArbSys.isTopLevelCall`.
     pub fn new(internals: &'b mut EvmInternals<'a>, call_depth: usize) -> Self {
-        Self { journal: ArbInternals(internals), call_depth }
+        Self {
+            journal: ArbInternals(internals),
+            call_depth,
+        }
     }
 }
 

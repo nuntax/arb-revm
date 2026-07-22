@@ -66,7 +66,7 @@ impl BatchPosterTable {
         } else if create_if_missing {
             self.add_poster(poster, poster, journal)
         } else {
-            eyre::bail!("poster not registered in ArbOS batch poster table")
+            eyre::bail!("poster not registered in ArbOS batch poster table");
         }
     }
 

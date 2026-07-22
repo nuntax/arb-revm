@@ -11,7 +11,8 @@ where
 {
     let call = match ArbStatistics::ArbStatisticsCalls::abi_decode(input) {
         Ok(c) => c,
-        Err(_) => return gated_revert_result(gas_limit),};
+        Err(_) => return gated_revert_result(gas_limit),
+    };
 
     match call {
         ArbStatistics::ArbStatisticsCalls::getStats(_) => {

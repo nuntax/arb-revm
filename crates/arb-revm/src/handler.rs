@@ -146,7 +146,9 @@ fn sample_handler_metrics(tx_type_index: usize) -> bool {
     match sample_rate {
         0 => false,
         1 => true,
-        rate => COUNTERS[tx_type_index].fetch_add(1, Ordering::Relaxed) % rate == 0,
+        rate => COUNTERS[tx_type_index]
+            .fetch_add(1, Ordering::Relaxed)
+            .is_multiple_of(rate),
     }
 }
 
@@ -1217,7 +1219,9 @@ where
             .l2_pricing
             .grow_backlog(gas_used, arbos_version, journal)
             .map_err(|error| {
-                ERROR::from_string(format!("[ARBITRUM] failed to grow retry L2 backlog: {error}"))
+                ERROR::from_string(format!(
+                    "[ARBITRUM] failed to grow retry L2 backlog: {error}"
+                ))
             })?;
 
         // Retry post-exec lifecycle (clear on success, restore escrow on failure) must run in

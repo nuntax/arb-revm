@@ -519,13 +519,13 @@ fn witness_post_state_root(
             account_updates.insert(account_key, None);
             continue;
         }
-        if let Some(code) = &delta.code {
-            if account_code_hash(code) != delta.code_hash {
-                return Err(IncompleteWitness::InvalidCompleteState(format!(
-                    "post-state account {:#x} has a code/hash mismatch",
-                    delta.address
-                )));
-            }
+        if let Some(code) = &delta.code
+            && account_code_hash(code) != delta.code_hash
+        {
+            return Err(IncompleteWitness::InvalidCompleteState(format!(
+                "post-state account {:#x} has a code/hash mismatch",
+                delta.address
+            )));
         }
         let before = witness.trie_account(delta.address)?.unwrap_or_default();
         let mut storage_updates = BTreeMap::new();

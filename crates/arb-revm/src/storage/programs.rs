@@ -87,23 +87,23 @@ const DATA_PRICER_INERTIA_OFFSET: u8 = 4;
 ///
 /// Nitro reference: arbos/programs/params.go – Params() / Save().
 pub mod stylus_param_layout {
-    pub const VERSION:              (usize, usize) = (0,  2);  // uint16
-    pub const INK_PRICE:            (usize, usize) = (2,  3);  // uint24
-    pub const MAX_STACK_DEPTH:      (usize, usize) = (5,  4);  // uint32
-    pub const FREE_PAGES:           (usize, usize) = (9,  2);  // uint16
-    pub const PAGE_GAS:             (usize, usize) = (11, 2);  // uint16
-    pub const PAGE_LIMIT:           (usize, usize) = (13, 2);  // uint16
-    pub const MIN_INIT_GAS:         (usize, usize) = (15, 1);  // uint8
-    pub const MIN_CACHED_INIT_GAS:  (usize, usize) = (16, 1);  // uint8
-    pub const INIT_COST_SCALAR:     (usize, usize) = (17, 1);  // uint8
-    pub const CACHED_COST_SCALAR:   (usize, usize) = (18, 1);  // uint8
-    pub const EXPIRY_DAYS:          (usize, usize) = (19, 2);  // uint16
-    pub const KEEPALIVE_DAYS:       (usize, usize) = (21, 2);  // uint16
-    pub const BLOCK_CACHE_SIZE:     (usize, usize) = (23, 2);  // uint16
+    pub const VERSION: (usize, usize) = (0, 2); // uint16
+    pub const INK_PRICE: (usize, usize) = (2, 3); // uint24
+    pub const MAX_STACK_DEPTH: (usize, usize) = (5, 4); // uint32
+    pub const FREE_PAGES: (usize, usize) = (9, 2); // uint16
+    pub const PAGE_GAS: (usize, usize) = (11, 2); // uint16
+    pub const PAGE_LIMIT: (usize, usize) = (13, 2); // uint16
+    pub const MIN_INIT_GAS: (usize, usize) = (15, 1); // uint8
+    pub const MIN_CACHED_INIT_GAS: (usize, usize) = (16, 1); // uint8
+    pub const INIT_COST_SCALAR: (usize, usize) = (17, 1); // uint8
+    pub const CACHED_COST_SCALAR: (usize, usize) = (18, 1); // uint8
+    pub const EXPIRY_DAYS: (usize, usize) = (19, 2); // uint16
+    pub const KEEPALIVE_DAYS: (usize, usize) = (21, 2); // uint16
+    pub const BLOCK_CACHE_SIZE: (usize, usize) = (23, 2); // uint16
     /// MaxWasmSize field present only for ArbOS >= 40.
-    pub const MAX_WASM_SIZE:        (usize, usize) = (25, 4);  // uint32
+    pub const MAX_WASM_SIZE: (usize, usize) = (25, 4); // uint32
     /// MaxFragmentCount field present only for ArbOS >= 60.
-    pub const MAX_FRAGMENT_COUNT:   (usize, usize) = (29, 1);  // uint8
+    pub const MAX_FRAGMENT_COUNT: (usize, usize) = (29, 1); // uint8
     // Bytes [30..31] are unused padding.
 
     /// PageRamp is NOT stored in the packed word.  Nitro always uses the
@@ -180,26 +180,91 @@ impl ArbosPrograms {
 
         // ── 1. initStylusParams ────────────────────────────────────────────────
         let mut word = [0u8; 32];
-        pack_uint(&mut word, l::VERSION.0,             l::VERSION.1,             INITIAL_STYLUS_VERSION);
-        pack_uint(&mut word, l::INK_PRICE.0,           l::INK_PRICE.1,           INITIAL_INK_PRICE);
-        pack_uint(&mut word, l::MAX_STACK_DEPTH.0,     l::MAX_STACK_DEPTH.1,     INITIAL_MAX_STACK_DEPTH);
-        pack_uint(&mut word, l::FREE_PAGES.0,          l::FREE_PAGES.1,          INITIAL_FREE_PAGES);
-        pack_uint(&mut word, l::PAGE_GAS.0,            l::PAGE_GAS.1,            INITIAL_PAGE_GAS);
-        pack_uint(&mut word, l::PAGE_LIMIT.0,          l::PAGE_LIMIT.1,          INITIAL_PAGE_LIMIT);
-        pack_uint(&mut word, l::MIN_INIT_GAS.0,        l::MIN_INIT_GAS.1,        INITIAL_MIN_INIT_GAS);
-        pack_uint(&mut word, l::MIN_CACHED_INIT_GAS.0, l::MIN_CACHED_INIT_GAS.1, INITIAL_MIN_CACHED_INIT_GAS);
-        pack_uint(&mut word, l::INIT_COST_SCALAR.0,    l::INIT_COST_SCALAR.1,    INITIAL_INIT_COST_SCALAR);
-        pack_uint(&mut word, l::CACHED_COST_SCALAR.0,  l::CACHED_COST_SCALAR.1,  INITIAL_CACHED_COST_SCALAR);
-        pack_uint(&mut word, l::EXPIRY_DAYS.0,         l::EXPIRY_DAYS.1,         INITIAL_EXPIRY_DAYS);
-        pack_uint(&mut word, l::KEEPALIVE_DAYS.0,      l::KEEPALIVE_DAYS.1,      INITIAL_KEEPALIVE_DAYS);
-        pack_uint(&mut word, l::BLOCK_CACHE_SIZE.0,    l::BLOCK_CACHE_SIZE.1,    INITIAL_BLOCK_CACHE_SIZE);
+        pack_uint(
+            &mut word,
+            l::VERSION.0,
+            l::VERSION.1,
+            INITIAL_STYLUS_VERSION,
+        );
+        pack_uint(&mut word, l::INK_PRICE.0, l::INK_PRICE.1, INITIAL_INK_PRICE);
+        pack_uint(
+            &mut word,
+            l::MAX_STACK_DEPTH.0,
+            l::MAX_STACK_DEPTH.1,
+            INITIAL_MAX_STACK_DEPTH,
+        );
+        pack_uint(
+            &mut word,
+            l::FREE_PAGES.0,
+            l::FREE_PAGES.1,
+            INITIAL_FREE_PAGES,
+        );
+        pack_uint(&mut word, l::PAGE_GAS.0, l::PAGE_GAS.1, INITIAL_PAGE_GAS);
+        pack_uint(
+            &mut word,
+            l::PAGE_LIMIT.0,
+            l::PAGE_LIMIT.1,
+            INITIAL_PAGE_LIMIT,
+        );
+        pack_uint(
+            &mut word,
+            l::MIN_INIT_GAS.0,
+            l::MIN_INIT_GAS.1,
+            INITIAL_MIN_INIT_GAS,
+        );
+        pack_uint(
+            &mut word,
+            l::MIN_CACHED_INIT_GAS.0,
+            l::MIN_CACHED_INIT_GAS.1,
+            INITIAL_MIN_CACHED_INIT_GAS,
+        );
+        pack_uint(
+            &mut word,
+            l::INIT_COST_SCALAR.0,
+            l::INIT_COST_SCALAR.1,
+            INITIAL_INIT_COST_SCALAR,
+        );
+        pack_uint(
+            &mut word,
+            l::CACHED_COST_SCALAR.0,
+            l::CACHED_COST_SCALAR.1,
+            INITIAL_CACHED_COST_SCALAR,
+        );
+        pack_uint(
+            &mut word,
+            l::EXPIRY_DAYS.0,
+            l::EXPIRY_DAYS.1,
+            INITIAL_EXPIRY_DAYS,
+        );
+        pack_uint(
+            &mut word,
+            l::KEEPALIVE_DAYS.0,
+            l::KEEPALIVE_DAYS.1,
+            INITIAL_KEEPALIVE_DAYS,
+        );
+        pack_uint(
+            &mut word,
+            l::BLOCK_CACHE_SIZE.0,
+            l::BLOCK_CACHE_SIZE.1,
+            INITIAL_BLOCK_CACHE_SIZE,
+        );
         // MaxWasmSize: stored only from ArbOS >= 40 (Nitro: `if arbosVersion >= ArbosVersion_40`)
         if arbos_version >= 40 {
-            pack_uint(&mut word, l::MAX_WASM_SIZE.0, l::MAX_WASM_SIZE.1, INITIAL_MAX_WASM_SIZE);
+            pack_uint(
+                &mut word,
+                l::MAX_WASM_SIZE.0,
+                l::MAX_WASM_SIZE.1,
+                INITIAL_MAX_WASM_SIZE,
+            );
         }
         // MaxFragmentCount: stored only from ArbOS >= 60 / StylusContractLimit
         if arbos_version >= 60 {
-            pack_uint(&mut word, l::MAX_FRAGMENT_COUNT.0, l::MAX_FRAGMENT_COUNT.1, INITIAL_MAX_FRAGMENT_COUNT);
+            pack_uint(
+                &mut word,
+                l::MAX_FRAGMENT_COUNT.0,
+                l::MAX_FRAGMENT_COUNT.1,
+                INITIAL_MAX_FRAGMENT_COUNT,
+            );
         }
         self.write_params_word(word, journal)
             .map_err(|e| eyre::eyre!("programs.initialize: write params word: {e}"))?;
@@ -289,7 +354,11 @@ impl ArbosPrograms {
         pack_uint(&mut word, 11, 3, info.asm_estimate_kb);
         word[14] = info.cached as u8;
         self.program_data
-            .set(FixedBytes::from(code_hash.0), U256::from_be_bytes(word), journal)
+            .set(
+                FixedBytes::from(code_hash.0),
+                U256::from_be_bytes(word),
+                journal,
+            )
             .map_err(|e| eyre::eyre!("Stylus program write error: {e}"))
     }
 
@@ -445,13 +514,13 @@ mod tests {
     use super::*;
     use crate::{
         api::default_ctx::{ArbContext, DefaultArb},
-        arbos_init::{initialize_arbos_state, ArbosInitConfig},
+        arbos_init::{ArbosInitConfig, initialize_arbos_state},
         storage::ArbosState,
     };
     use revm::{
         context_interface::ContextTr,
         database_interface::EmptyDB,
-        primitives::{address, U256},
+        primitives::{U256, address},
     };
 
     /// Compile-time check: INITIAL_BYTES_PER_SECOND must equal 34865.
@@ -483,33 +552,115 @@ mod tests {
         let mut ctx = fresh();
         let j = ctx.journal_mut();
         let state = ArbosState::open();
-        state.programs.initialize(30, j).expect("programs.initialize(30)");
+        state
+            .programs
+            .initialize(30, j)
+            .expect("programs.initialize(30)");
 
-        let word = state.programs.read_params_word(j).expect("read params word");
+        let word = state
+            .programs
+            .read_params_word(j)
+            .expect("read params word");
         use stylus_param_layout as l;
-        assert_eq!(unpack_uint(&word, l::VERSION.0,             l::VERSION.1),             1,      "Version");
-        assert_eq!(unpack_uint(&word, l::INK_PRICE.0,           l::INK_PRICE.1),           10_000, "InkPrice");
-        assert_eq!(unpack_uint(&word, l::MAX_STACK_DEPTH.0,     l::MAX_STACK_DEPTH.1),     262_144,"MaxStackDepth");
-        assert_eq!(unpack_uint(&word, l::FREE_PAGES.0,          l::FREE_PAGES.1),          2,      "FreePages");
-        assert_eq!(unpack_uint(&word, l::PAGE_GAS.0,            l::PAGE_GAS.1),            1_000,  "PageGas");
-        assert_eq!(unpack_uint(&word, l::PAGE_LIMIT.0,          l::PAGE_LIMIT.1),          128,    "PageLimit");
-        assert_eq!(unpack_uint(&word, l::MIN_INIT_GAS.0,        l::MIN_INIT_GAS.1),        72,     "MinInitGas");
-        assert_eq!(unpack_uint(&word, l::MIN_CACHED_INIT_GAS.0, l::MIN_CACHED_INIT_GAS.1), 11,    "MinCachedInitGas");
-        assert_eq!(unpack_uint(&word, l::INIT_COST_SCALAR.0,    l::INIT_COST_SCALAR.1),    50,     "InitCostScalar");
-        assert_eq!(unpack_uint(&word, l::CACHED_COST_SCALAR.0,  l::CACHED_COST_SCALAR.1),  50,     "CachedCostScalar");
-        assert_eq!(unpack_uint(&word, l::EXPIRY_DAYS.0,         l::EXPIRY_DAYS.1),         365,    "ExpiryDays");
-        assert_eq!(unpack_uint(&word, l::KEEPALIVE_DAYS.0,      l::KEEPALIVE_DAYS.1),      31,     "KeepaliveDays");
-        assert_eq!(unpack_uint(&word, l::BLOCK_CACHE_SIZE.0,    l::BLOCK_CACHE_SIZE.1),    32,     "BlockCacheSize");
+        assert_eq!(unpack_uint(&word, l::VERSION.0, l::VERSION.1), 1, "Version");
+        assert_eq!(
+            unpack_uint(&word, l::INK_PRICE.0, l::INK_PRICE.1),
+            10_000,
+            "InkPrice"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::MAX_STACK_DEPTH.0, l::MAX_STACK_DEPTH.1),
+            262_144,
+            "MaxStackDepth"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::FREE_PAGES.0, l::FREE_PAGES.1),
+            2,
+            "FreePages"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::PAGE_GAS.0, l::PAGE_GAS.1),
+            1_000,
+            "PageGas"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::PAGE_LIMIT.0, l::PAGE_LIMIT.1),
+            128,
+            "PageLimit"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::MIN_INIT_GAS.0, l::MIN_INIT_GAS.1),
+            72,
+            "MinInitGas"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::MIN_CACHED_INIT_GAS.0, l::MIN_CACHED_INIT_GAS.1),
+            11,
+            "MinCachedInitGas"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::INIT_COST_SCALAR.0, l::INIT_COST_SCALAR.1),
+            50,
+            "InitCostScalar"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::CACHED_COST_SCALAR.0, l::CACHED_COST_SCALAR.1),
+            50,
+            "CachedCostScalar"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::EXPIRY_DAYS.0, l::EXPIRY_DAYS.1),
+            365,
+            "ExpiryDays"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::KEEPALIVE_DAYS.0, l::KEEPALIVE_DAYS.1),
+            31,
+            "KeepaliveDays"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::BLOCK_CACHE_SIZE.0, l::BLOCK_CACHE_SIZE.1),
+            32,
+            "BlockCacheSize"
+        );
         // At v30 MaxWasmSize and MaxFragmentCount are NOT stored (ArbOS < 40 / < 60).
-        assert_eq!(unpack_uint(&word, l::MAX_WASM_SIZE.0,       l::MAX_WASM_SIZE.1),       0,      "MaxWasmSize must be 0 at v30");
-        assert_eq!(unpack_uint(&word, l::MAX_FRAGMENT_COUNT.0,  l::MAX_FRAGMENT_COUNT.1),  0,      "MaxFragmentCount must be 0 at v30");
+        assert_eq!(
+            unpack_uint(&word, l::MAX_WASM_SIZE.0, l::MAX_WASM_SIZE.1),
+            0,
+            "MaxWasmSize must be 0 at v30"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::MAX_FRAGMENT_COUNT.0, l::MAX_FRAGMENT_COUNT.1),
+            0,
+            "MaxFragmentCount must be 0 at v30"
+        );
 
         // Data pricer fields.
-        assert_eq!(state.programs.data_pricer.bytes_per_second.get(j).unwrap(), 34_865,     "bytes_per_second");
-        assert_eq!(state.programs.data_pricer.last_update_time.get(j).unwrap(), 1_421_388_000, "last_update_time = ArbitrumStartTime");
-        assert_eq!(state.programs.data_pricer.min_price.get(j).unwrap(),        82_928_201, "min_price");
-        assert_eq!(state.programs.data_pricer.inertia.get(j).unwrap(),          21_360_419, "inertia");
-        assert_eq!(state.programs.data_pricer.demand.get(j).unwrap(),           0,          "demand stays 0");
+        assert_eq!(
+            state.programs.data_pricer.bytes_per_second.get(j).unwrap(),
+            34_865,
+            "bytes_per_second"
+        );
+        assert_eq!(
+            state.programs.data_pricer.last_update_time.get(j).unwrap(),
+            1_421_388_000,
+            "last_update_time = ArbitrumStartTime"
+        );
+        assert_eq!(
+            state.programs.data_pricer.min_price.get(j).unwrap(),
+            82_928_201,
+            "min_price"
+        );
+        assert_eq!(
+            state.programs.data_pricer.inertia.get(j).unwrap(),
+            21_360_419,
+            "inertia"
+        );
+        assert_eq!(
+            state.programs.data_pricer.demand.get(j).unwrap(),
+            0,
+            "demand stays 0"
+        );
     }
 
     /// Full `initialize_arbos_state` at v40 must apply v30 (programs init) + v31 (Version→2,
@@ -522,18 +673,41 @@ mod tests {
         let j = ctx.journal_mut();
         let state = ArbosState::open();
 
-        let word = state.programs.read_params_word(j).expect("read params word");
+        let word = state
+            .programs
+            .read_params_word(j)
+            .expect("read params word");
         use stylus_param_layout as l;
         // v31 bumped Version to 2.
-        assert_eq!(unpack_uint(&word, l::VERSION.0, l::VERSION.1), 2, "Version must be 2 after v31");
+        assert_eq!(
+            unpack_uint(&word, l::VERSION.0, l::VERSION.1),
+            2,
+            "Version must be 2 after v31"
+        );
         // v31 set MinInitGas to v2MinInitGas = 69.
-        assert_eq!(unpack_uint(&word, l::MIN_INIT_GAS.0, l::MIN_INIT_GAS.1), 69, "MinInitGas must be 69 after v31");
+        assert_eq!(
+            unpack_uint(&word, l::MIN_INIT_GAS.0, l::MIN_INIT_GAS.1),
+            69,
+            "MinInitGas must be 69 after v31"
+        );
         // v40 stored MaxWasmSize = 128 * 1024 = 131072.
-        assert_eq!(unpack_uint(&word, l::MAX_WASM_SIZE.0, l::MAX_WASM_SIZE.1), 131_072, "MaxWasmSize must be 131072 at v40");
+        assert_eq!(
+            unpack_uint(&word, l::MAX_WASM_SIZE.0, l::MAX_WASM_SIZE.1),
+            131_072,
+            "MaxWasmSize must be 131072 at v40"
+        );
         // v50 not yet reached, MaxStackDepth still 262144.
-        assert_eq!(unpack_uint(&word, l::MAX_STACK_DEPTH.0, l::MAX_STACK_DEPTH.1), 262_144, "MaxStackDepth unchanged before v50");
+        assert_eq!(
+            unpack_uint(&word, l::MAX_STACK_DEPTH.0, l::MAX_STACK_DEPTH.1),
+            262_144,
+            "MaxStackDepth unchanged before v50"
+        );
         // MaxFragmentCount not yet set (v60 not reached).
-        assert_eq!(unpack_uint(&word, l::MAX_FRAGMENT_COUNT.0, l::MAX_FRAGMENT_COUNT.1), 0, "MaxFragmentCount 0 before v60");
+        assert_eq!(
+            unpack_uint(&word, l::MAX_FRAGMENT_COUNT.0, l::MAX_FRAGMENT_COUNT.1),
+            0,
+            "MaxFragmentCount 0 before v60"
+        );
     }
 
     /// Full init at v50: MaxStackDepth must be capped at 22000 by the v50 upgrade.
@@ -544,13 +718,28 @@ mod tests {
         let j = ctx.journal_mut();
         let state = ArbosState::open();
 
-        let word = state.programs.read_params_word(j).expect("read params word");
+        let word = state
+            .programs
+            .read_params_word(j)
+            .expect("read params word");
         use stylus_param_layout as l;
-        assert_eq!(unpack_uint(&word, l::MAX_STACK_DEPTH.0, l::MAX_STACK_DEPTH.1), 22_000, "MaxStackDepth capped at 22000 by v50");
+        assert_eq!(
+            unpack_uint(&word, l::MAX_STACK_DEPTH.0, l::MAX_STACK_DEPTH.1),
+            22_000,
+            "MaxStackDepth capped at 22000 by v50"
+        );
         // Version still 2 (no further stylus version bump at v50).
-        assert_eq!(unpack_uint(&word, l::VERSION.0, l::VERSION.1), 2, "Version still 2 at v50");
+        assert_eq!(
+            unpack_uint(&word, l::VERSION.0, l::VERSION.1),
+            2,
+            "Version still 2 at v50"
+        );
         // MaxWasmSize preserved from v40.
-        assert_eq!(unpack_uint(&word, l::MAX_WASM_SIZE.0, l::MAX_WASM_SIZE.1), 131_072, "MaxWasmSize 131072 at v50");
+        assert_eq!(
+            unpack_uint(&word, l::MAX_WASM_SIZE.0, l::MAX_WASM_SIZE.1),
+            131_072,
+            "MaxWasmSize 131072 at v50"
+        );
     }
 
     /// Full init at v60: MaxFragmentCount must be set to 2 by the v60 upgrade.
@@ -561,14 +750,37 @@ mod tests {
         let j = ctx.journal_mut();
         let state = ArbosState::open();
 
-        let word = state.programs.read_params_word(j).expect("read params word");
+        let word = state
+            .programs
+            .read_params_word(j)
+            .expect("read params word");
         use stylus_param_layout as l;
         // A v60 genesis runs the full upgrade cascade (firstTime), incl. v59 UpgradeToVersion(3)
         // and v60 UpgradeToArbosVersion(60): MaxWasmSize -> 256 KB, MaxFragmentCount -> 4.
-        assert_eq!(unpack_uint(&word, l::MAX_FRAGMENT_COUNT.0, l::MAX_FRAGMENT_COUNT.1), 4, "MaxFragmentCount must be 4 at v60");
-        assert_eq!(unpack_uint(&word, l::MAX_STACK_DEPTH.0, l::MAX_STACK_DEPTH.1), 22_000, "MaxStackDepth capped at 22000");
-        assert_eq!(unpack_uint(&word, l::MAX_WASM_SIZE.0, l::MAX_WASM_SIZE.1), 262_144, "MaxWasmSize 262144 (256 KB) at v60");
-        assert_eq!(unpack_uint(&word, l::VERSION.0, l::VERSION.1), 3, "Version 3 (v59 UpgradeToVersion(3))");
-        assert_eq!(unpack_uint(&word, l::MIN_INIT_GAS.0, l::MIN_INIT_GAS.1), 69, "MinInitGas 69");
+        assert_eq!(
+            unpack_uint(&word, l::MAX_FRAGMENT_COUNT.0, l::MAX_FRAGMENT_COUNT.1),
+            4,
+            "MaxFragmentCount must be 4 at v60"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::MAX_STACK_DEPTH.0, l::MAX_STACK_DEPTH.1),
+            22_000,
+            "MaxStackDepth capped at 22000"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::MAX_WASM_SIZE.0, l::MAX_WASM_SIZE.1),
+            262_144,
+            "MaxWasmSize 262144 (256 KB) at v60"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::VERSION.0, l::VERSION.1),
+            3,
+            "Version 3 (v59 UpgradeToVersion(3))"
+        );
+        assert_eq!(
+            unpack_uint(&word, l::MIN_INIT_GAS.0, l::MIN_INIT_GAS.1),
+            69,
+            "MinInitGas 69"
+        );
     }
 }

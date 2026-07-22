@@ -122,7 +122,10 @@ mod tests {
     #[test]
     fn arbos_version_maps_to_correct_hardfork() {
         // Nitro params/config.go: 1-10 London, 11+ Shanghai, 20+ Cancun, 40+ Prague, 50+ Osaka.
-        assert_eq!(ArbSpecId::from_arbos_version(1).into_eth_spec(), SpecId::LONDON);
+        assert_eq!(
+            ArbSpecId::from_arbos_version(1).into_eth_spec(),
+            SpecId::LONDON
+        );
         assert_eq!(
             ArbSpecId::from_arbos_version(10).into_eth_spec(),
             SpecId::LONDON

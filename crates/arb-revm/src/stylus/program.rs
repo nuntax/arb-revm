@@ -114,7 +114,12 @@ pub fn ink_to_gas_ceil(pricing: PricingParams, ink: Ink) -> u64 {
 }
 
 /// Insert a compiled program into the cache (keyed by code hash).
-pub fn cache_program(code_hash: B256, serialized: Vec<u8>, module: Module, stylus_data: StylusData) {
+pub fn cache_program(
+    code_hash: B256,
+    serialized: Vec<u8>,
+    module: Module,
+    stylus_data: StylusData,
+) {
     let mut cache = PROGRAM_CACHE.lock().unwrap();
     cache.get_or_insert(code_hash, || (serialized, module, stylus_data));
 }

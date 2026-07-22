@@ -501,9 +501,10 @@ where
             }
             match failed {
                 None => ok_result(gas_limit, vec![]),
-                Some(msg) => {
-                    revert_result(gas_limit, &format!("ArbOwner: setGasPricingConstraints {msg}"))
-                }
+                Some(msg) => revert_result(
+                    gas_limit,
+                    &format!("ArbOwner: setGasPricingConstraints {msg}"),
+                ),
             }
         }
         ArbOwner::ArbOwnerCalls::releaseL1PricerSurplusFunds(_) => revert_result(
@@ -521,10 +522,15 @@ where
             let mut word = match state.programs.read_params_word(j) {
                 Ok(w) => w,
                 Err(e) => {
-                    return revert_result(gas_limit, &format!("ArbOwner: setInkPrice read: {e}"))
+                    return revert_result(gas_limit, &format!("ArbOwner: setInkPrice read: {e}"));
                 }
             };
-            pack_uint(&mut word, layout::INK_PRICE.0, layout::INK_PRICE.1, c.inkPrice);
+            pack_uint(
+                &mut word,
+                layout::INK_PRICE.0,
+                layout::INK_PRICE.1,
+                c.inkPrice,
+            );
             set_or_revert!(state.programs.write_params_word(word, j), "setInkPrice")
         }
         ArbOwner::ArbOwnerCalls::setWasmMaxStackDepth(c) => {
@@ -534,7 +540,7 @@ where
                     return revert_result(
                         gas_limit,
                         &format!("ArbOwner: setWasmMaxStackDepth read: {e}"),
-                    )
+                    );
                 }
             };
             pack_uint(
@@ -555,7 +561,7 @@ where
                     return revert_result(
                         gas_limit,
                         &format!("ArbOwner: setWasmFreePages read: {e}"),
-                    )
+                    );
                 }
             };
             pack_uint(
@@ -564,7 +570,10 @@ where
                 layout::FREE_PAGES.1,
                 c.pages.into(),
             );
-            set_or_revert!(state.programs.write_params_word(word, j), "setWasmFreePages")
+            set_or_revert!(
+                state.programs.write_params_word(word, j),
+                "setWasmFreePages"
+            )
         }
         ArbOwner::ArbOwnerCalls::setWasmPageGas(c) => {
             let mut word = match state.programs.read_params_word(j) {
@@ -573,7 +582,7 @@ where
                     return revert_result(
                         gas_limit,
                         &format!("ArbOwner: setWasmPageGas read: {e}"),
-                    )
+                    );
                 }
             };
             pack_uint(
@@ -591,7 +600,7 @@ where
                     return revert_result(
                         gas_limit,
                         &format!("ArbOwner: setWasmPageLimit read: {e}"),
-                    )
+                    );
                 }
             };
             pack_uint(
@@ -600,7 +609,10 @@ where
                 layout::PAGE_LIMIT.1,
                 c.limit.into(),
             );
-            set_or_revert!(state.programs.write_params_word(word, j), "setWasmPageLimit")
+            set_or_revert!(
+                state.programs.write_params_word(word, j),
+                "setWasmPageLimit"
+            )
         }
         ArbOwner::ArbOwnerCalls::setWasmMinInitGas(c) => {
             let gas_units =
@@ -615,7 +627,7 @@ where
                     return revert_result(
                         gas_limit,
                         &format!("ArbOwner: setWasmMinInitGas read: {e}"),
-                    )
+                    );
                 }
             };
             pack_uint(
@@ -646,7 +658,7 @@ where
                     return revert_result(
                         gas_limit,
                         &format!("ArbOwner: setWasmInitCostScalar read: {e}"),
-                    )
+                    );
                 }
             };
             pack_uint(
@@ -667,7 +679,7 @@ where
                     return revert_result(
                         gas_limit,
                         &format!("ArbOwner: setWasmExpiryDays read: {e}"),
-                    )
+                    );
                 }
             };
             pack_uint(
@@ -688,7 +700,7 @@ where
                     return revert_result(
                         gas_limit,
                         &format!("ArbOwner: setWasmKeepaliveDays read: {e}"),
-                    )
+                    );
                 }
             };
             pack_uint(
@@ -709,7 +721,7 @@ where
                     return revert_result(
                         gas_limit,
                         &format!("ArbOwner: setWasmBlockCacheSize read: {e}"),
-                    )
+                    );
                 }
             };
             pack_uint(
@@ -730,7 +742,7 @@ where
                     return revert_result(
                         gas_limit,
                         &format!("ArbOwner: setWasmMaxSize read: {e}"),
-                    )
+                    );
                 }
             };
             pack_uint(
@@ -765,7 +777,7 @@ where
                     return revert_result(
                         gas_limit,
                         &format!("ArbOwner: setMaxStylusContractFragments read: {e}"),
-                    )
+                    );
                 }
             };
             pack_uint(

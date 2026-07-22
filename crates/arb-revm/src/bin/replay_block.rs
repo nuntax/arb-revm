@@ -10,14 +10,15 @@ use alloy_provider::{Provider, ProviderBuilder};
 use alloy_rpc_client::ClientBuilder;
 use alloy_rpc_types_trace::geth::{GethDebugTracingOptions, GethTrace};
 use alloy_transport::layers::RetryBackoffLayer;
-use arbitrum_alloy_network::Arbitrum;
-use arbitrum_alloy_rpc_types::{ArbTransaction as RpcArbTransaction, ArbTransactionReceipt};
+use alloy_trie::{Nibbles, TrieAccount, proof::verify_proof};
 use arb_revm::replay::{
-    BlockFixture, ExpectedAccountState, ExpectedLog, ExpectedTx, REPLAY_FIXTURE_SCHEMA, RecordingDb,
-    ReplayFixture, StorageEntry,
+    BlockFixture, ExpectedAccountState, ExpectedLog, ExpectedTx, REPLAY_FIXTURE_SCHEMA,
+    RecordingDb, ReplayFixture, StorageEntry,
 };
 use arb_revm::transaction::arb_envelope_to_tx_env;
 use arb_revm::{ArbBuilder, ArbChainContext, ArbContext, ArbSpecId, ArbTransaction, DefaultArb};
+use arbitrum_alloy_network::Arbitrum;
+use arbitrum_alloy_rpc_types::{ArbTransaction as RpcArbTransaction, ArbTransactionReceipt};
 use eyre::{Result, eyre};
 use revm::{
     ExecuteCommitEvm, ExecuteEvm,
@@ -27,19 +28,17 @@ use revm::{
     database_interface::WrapDatabaseAsync,
     inspector::{InspectCommitEvm, Inspector},
     interpreter::{
-        CallInputs, CallOutcome, Interpreter, interpreter::EthInterpreter,
-        interpreter_types::Jumps,
+        CallInputs, CallOutcome, Interpreter, interpreter::EthInterpreter, interpreter_types::Jumps,
     },
     primitives::{Address, B256, Bytes, KECCAK_EMPTY, U256, keccak256},
     state::EvmState,
 };
-use revm_database::{AlloyDB, AlloyDBError, async_db::DatabaseAsyncRef};
-use alloy_trie::{Nibbles, TrieAccount, proof::verify_proof};
 use revm::{
     bytecode::Bytecode,
     primitives::{StorageKey, StorageValue},
     state::AccountInfo,
 };
+use revm_database::{AlloyDB, AlloyDBError, async_db::DatabaseAsyncRef};
 
 const EXEC_MAX_ATTEMPTS: usize = 8;
 
@@ -175,8 +174,11 @@ impl<CTX> Inspector<CTX, EthInterpreter> for TraceInsp {
             self.last_pc = interp.bytecode.pc();
             let data = interp.stack.data();
             let n = data.len();
-            let top: Vec<String> =
-                data[n.saturating_sub(5)..].iter().rev().map(|v| format!("{v:#x}")).collect();
+            let top: Vec<String> = data[n.saturating_sub(5)..]
+                .iter()
+                .rev()
+                .map(|v| format!("{v:#x}"))
+                .collect();
             self.stacks.push(top);
         }
     }
@@ -295,10 +297,7 @@ async fn compare_state_writes<P: Provider<Arbitrum>>(
 
     for (address, expected) in writes {
         if let Some(expected_balance) = expected.balance {
-            let actual_balance = provider
-                .get_balance(*address)
-                .block_id(block_id)
-                .await?;
+            let actual_balance = provider.get_balance(*address).block_id(block_id).await?;
             if actual_balance != expected_balance {
                 errors.push(format!(
                     "state {address:#x} balance mismatch: expected {expected_balance:#x}, got {actual_balance:#x}"
@@ -403,26 +402,29 @@ async fn verify_writes_against_state_root<P: Provider<Arbitrum>>(
 
         // 2) Each account field we wrote must match the proven canonical value.
         if let Some(b) = expected.balance
-            && b != proof.balance {
-                errors.push(format!(
-                    "state {address:#x}: balance mismatch: expected {:#x}, got(ours) {b:#x}",
-                    proof.balance
-                ));
-            }
+            && b != proof.balance
+        {
+            errors.push(format!(
+                "state {address:#x}: balance mismatch: expected {:#x}, got(ours) {b:#x}",
+                proof.balance
+            ));
+        }
         if let Some(n) = expected.nonce
-            && n != proof.nonce {
-                errors.push(format!(
-                    "state {address:#x}: nonce mismatch: expected {}, got(ours) {n}",
-                    proof.nonce
-                ));
-            }
+            && n != proof.nonce
+        {
+            errors.push(format!(
+                "state {address:#x}: nonce mismatch: expected {}, got(ours) {n}",
+                proof.nonce
+            ));
+        }
         if let Some(h) = expected.code_hash
-            && h != proof.code_hash {
-                errors.push(format!(
-                    "state {address:#x}: code_hash mismatch: expected {:#x}, got(ours) {h:#x}",
-                    proof.code_hash
-                ));
-            }
+            && h != proof.code_hash
+        {
+            errors.push(format!(
+                "state {address:#x}: code_hash mismatch: expected {:#x}, got(ours) {h:#x}",
+                proof.code_hash
+            ));
+        }
 
         // 3) Each slot we wrote must be committed (with our value) under the storage root.
         //    getProof returns storage proofs in request order, matching `slot_keys`.
@@ -457,9 +459,10 @@ async fn witness_state_root_check<P: Provider<Arbitrum>>(
 ) -> Result<Option<String>> {
     let parent = block_number - 1;
     let parent_id = BlockId::number(parent);
-    let parent_block = retry_read(|| provider.get_block_by_number(BlockNumberOrTag::Number(parent)))
-        .await?
-        .ok_or_else(|| eyre!("parent block {parent} not found"))?;
+    let parent_block =
+        retry_read(|| provider.get_block_by_number(BlockNumberOrTag::Number(parent)))
+            .await?
+            .ok_or_else(|| eyre!("parent block {parent} not found"))?;
     let parent_state_root = parent_block.header.inner.state_root;
 
     let mut account_proofs: Vec<Bytes> = Vec::new();
@@ -497,7 +500,11 @@ async fn witness_state_root_check<P: Provider<Arbitrum>>(
         let absent = proof.code_hash == B256::ZERO;
         let n1_nonce = if absent { 0 } else { proof.nonce };
         let n1_balance = if absent { U256::ZERO } else { proof.balance };
-        let n1_code_hash = if absent { KECCAK_EMPTY } else { proof.code_hash };
+        let n1_code_hash = if absent {
+            KECCAK_EMPTY
+        } else {
+            proof.code_hash
+        };
         let n1_storage_root = if absent || proof.storage_hash == B256::ZERO {
             alloy_trie::EMPTY_ROOT_HASH
         } else {
@@ -661,7 +668,8 @@ async fn deletion_collapse_recheck<P: Provider<Arbitrum>>(
     let mut patched = account_updates.clone();
     for (address, key, our_nonce, our_balance, our_code_hash) in deletion_accounts {
         // Canonical block-N account leaf (authoritative; its storage root is collapse-free).
-        let proof = retry_read(|| provider.get_proof(*address, Vec::new()).block_id(block_id)).await?;
+        let proof =
+            retry_read(|| provider.get_proof(*address, Vec::new()).block_id(block_id)).await?;
         let canon_code_hash = if proof.code_hash == B256::ZERO {
             KECCAK_EMPTY
         } else {
@@ -822,8 +830,8 @@ async fn main() -> Result<()> {
             None => rpc_url.clone(),
         },
     };
-    let url_parsed = url::Url::parse(&http_url)
-        .map_err(|e| eyre!("invalid rpc url `{http_url}`: {e}"))?;
+    let url_parsed =
+        url::Url::parse(&http_url).map_err(|e| eyre!("invalid rpc url `{http_url}`: {e}"))?;
 
     // RetryBackoffLayer replaces the hand-rolled retry loop for transport-level errors.
     let client = ClientBuilder::default()
@@ -921,7 +929,10 @@ async fn main() -> Result<()> {
     let block_timestamp: u64 = block_env.timestamp.try_into().unwrap_or(u64::MAX);
     let arbos_version = arb_revm::ArbosState::read_effective_version(&db, block_timestamp);
     let spec = ArbSpecId::from_arbos_version(arbos_version);
-    println!("arbos_version={arbos_version} spec={spec:?} eth_spec={:?}", spec.into_eth_spec());
+    println!(
+        "arbos_version={arbos_version} spec={spec:?} eth_spec={:?}",
+        spec.into_eth_spec()
+    );
     let mut cfg_env = CfgEnv::new_with_spec(spec)
         .with_chain_id(chain_id)
         .with_disable_priority_fee_check(true);
@@ -961,7 +972,8 @@ async fn main() -> Result<()> {
                     "trace tx[{idx}] {:#x}: result={}",
                     transactions[idx].as_ref().hash(),
                     match &outcome {
-                        Ok(r) => format!("gas_used={}, success={}", r.tx_gas_used(), r.is_success()),
+                        Ok(r) =>
+                            format!("gas_used={}, success={}", r.tx_gas_used(), r.is_success()),
                         Err(e) => format!("error: {e:?}"),
                     }
                 );
@@ -1000,14 +1012,13 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let context: ArbContext<&mut _> =
-        ArbContext::arb_with_chain_context(
-            ArbChainContext::new(None).with_l1_block_number(l1_block_number),
-        )
-            .with_db(&mut db)
-            .with_cfg(cfg_env)
-            .with_block(block_env)
-            .with_tx(ArbTransaction::<TxEnv>::default());
+    let context: ArbContext<&mut _> = ArbContext::arb_with_chain_context(
+        ArbChainContext::new(None).with_l1_block_number(l1_block_number),
+    )
+    .with_db(&mut db)
+    .with_cfg(cfg_env)
+    .with_block(block_env)
+    .with_tx(ArbTransaction::<TxEnv>::default());
     let mut evm = context.build_arb();
 
     let system_sender = Address::from_str("0x00000000000000000000000000000000000A4B05")
@@ -1181,7 +1192,10 @@ async fn main() -> Result<()> {
         // "missing write" can be diffed against the canonical prestateTracer diff.
         if std::env::var("DUMP_WRITES").is_ok() {
             for (addr, w) in &state_writes {
-                println!("  WRITE {addr:?} nonce={:?} balance={:?}", w.nonce, w.balance);
+                println!(
+                    "  WRITE {addr:?} nonce={:?} balance={:?}",
+                    w.nonce, w.balance
+                );
                 for (slot, val) in &w.storage {
                     println!("      slot {slot:#x} = {val:#x}");
                 }
@@ -1214,7 +1228,10 @@ async fn main() -> Result<()> {
                     );
                 } else {
                     mismatches += state_errors.len();
-                    println!("  per-write localizer found {} diff(s):", state_errors.len());
+                    println!(
+                        "  per-write localizer found {} diff(s):",
+                        state_errors.len()
+                    );
                     for err in state_errors {
                         println!("  - {err}");
                     }
@@ -1320,8 +1337,7 @@ async fn build_expected_state<P: Provider<Arbitrum>>(
             None
         };
         let code_hash = if w.code_hash.is_some() {
-            let code =
-                retry_read(|| provider.get_code_at(*address).block_id(block_id)).await?;
+            let code = retry_read(|| provider.get_code_at(*address).block_id(block_id)).await?;
             Some(if code.is_empty() {
                 KECCAK_EMPTY
             } else {

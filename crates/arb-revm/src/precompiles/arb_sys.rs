@@ -11,9 +11,15 @@ const ARBOS_VERSION_ARB_BLOCK_HASH_SOL_ERROR: u64 = 11;
 
 /// Graceful revert carrying Nitro's `InvalidBlockNumber(uint256 requested, uint256 current)` custom
 /// error (selector `0xd5dc642d`), used by `ArbSys.arbBlockHash` at ArbOS >= 11.
-fn invalid_block_number_revert(gas_limit: u64, requested: U256, current: U256) -> InterpreterResult {
+fn invalid_block_number_revert(
+    gas_limit: u64,
+    requested: U256,
+    current: U256,
+) -> InterpreterResult {
     let mut data = vec![0xd5u8, 0xdc, 0x64, 0x2d];
-    data.extend_from_slice(&alloy_core::sol_types::SolValue::abi_encode(&(requested, current)));
+    data.extend_from_slice(&alloy_core::sol_types::SolValue::abi_encode(&(
+        requested, current,
+    )));
     InterpreterResult {
         result: InstructionResult::Revert,
         gas: Gas::new(gas_limit),
@@ -63,7 +69,9 @@ where
             if !fits_u64 || target >= current || target.saturating_add(256) < current {
                 let arbos_version = match state.arbos_version.get(ctx.journal_mut()) {
                     Ok(v) => v,
-                    Err(e) => return fatal_result(gas_limit, &format!("ArbSys: storage error: {e}")),
+                    Err(e) => {
+                        return fatal_result(gas_limit, &format!("ArbSys: storage error: {e}"));
+                    }
                 };
                 // ArbOS >= 11 returns the `InvalidBlockNumber(uint256,uint256)` custom error, which
                 // Nitro's precompile framework renders as a graceful (gas-refunding) revert. Before
@@ -73,7 +81,11 @@ where
                 // the failure sees a very different amount of gas burned, changing whether the outer
                 // tx runs out of gas (arb1 block 59245477, ArbOS 10).
                 if arbos_version >= ARBOS_VERSION_ARB_BLOCK_HASH_SOL_ERROR {
-                    return invalid_block_number_revert(gas_limit, call.arbBlockNum, U256::from(current));
+                    return invalid_block_number_revert(
+                        gas_limit,
+                        call.arbBlockNum,
+                        U256::from(current),
+                    );
                 }
                 return gated_revert_result(gas_limit);
             }

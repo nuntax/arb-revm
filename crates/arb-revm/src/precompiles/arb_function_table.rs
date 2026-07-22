@@ -11,7 +11,8 @@ where
 {
     let call = match ArbFunctionTable::ArbFunctionTableCalls::abi_decode(input) {
         Ok(c) => c,
-        Err(_) => return gated_revert_result(gas_limit),};
+        Err(_) => return gated_revert_result(gas_limit),
+    };
 
     // ArbFunctionTable is vestigial post-Nitro; tables are always empty.
     match call {

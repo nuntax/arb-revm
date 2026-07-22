@@ -27,7 +27,9 @@ fn parse_args(arguments: Vec<String>) -> Result<CaptureArgs> {
             print_usage();
             process::exit(0);
         }
-        Some(command) => bail!("unknown command {command:?}; expected capture-block"),
+        Some(command) => {
+            bail!("unknown command {command:?}; expected capture-block");
+        }
     }
 
     let mut rpc = None;
@@ -77,7 +79,9 @@ fn parse_args(arguments: Vec<String>) -> Result<CaptureArgs> {
                 print_usage();
                 process::exit(0);
             }
-            _ => bail!("unknown argument {flag:?}"),
+            _ => {
+                bail!("unknown argument {flag:?}");
+            }
         }
     }
 

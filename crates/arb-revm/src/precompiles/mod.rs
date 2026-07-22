@@ -3,12 +3,12 @@ use crate::{
     arb_journal::{ArbCall, ArbPrecompileCtx},
     util::{inverse_remap_l1_address, remap_l1_address},
 };
+use alloy_core::sol_types::SolCall;
 use arbitrum_alloy_precompiles::addresses::{
     ARB_ADDRESS_TABLE, ARB_AGGREGATOR, ARB_BLS, ARB_DEBUG, ARB_FILTERED_TRANSACTIONS_MANAGER,
     ARB_FUNCTION_TABLE, ARB_GAS_INFO, ARB_INFO, ARB_NATIVE_TOKEN_MANAGER, ARB_OWNER,
     ARB_OWNER_PUBLIC, ARB_RETRYABLE_TX, ARB_STATISTICS, ARB_SYS, ARB_WASM, ARB_WASM_CACHE,
 };
-use alloy_core::sol_types::SolCall;
 use revm::{
     context_interface::{ContextTr, JournalTr},
     handler::{EthPrecompiles, PrecompileProvider},
@@ -36,7 +36,9 @@ mod arb_wasm;
 mod arb_wasm_cache;
 mod common;
 
-use self::common::{empty_active_result, fatal_result, gated_revert_result, ok_result, revert_result};
+use self::common::{
+    empty_active_result, fatal_result, gated_revert_result, ok_result, revert_result,
+};
 pub(super) use crate::{ArbosState, storage::RETRYABLE_LIFETIME_SECONDS};
 pub(super) use alloy_core::sol_types::SolInterface;
 pub(super) use arbitrum_alloy_precompiles::{
@@ -189,8 +191,7 @@ impl ArbPrecompilesEnum {
         // final gas charge, but the inner mutation must never run.
         if arb == ArbPrecompilesEnum::ArbFilteredTransactionsManager {
             let sel = selector.expect("selector resolved past method gating");
-            if call.value != U256::ZERO
-                || (call.is_static && filtered_manager_method_is_write(sel))
+            if call.value != U256::ZERO || (call.is_static && filtered_manager_method_is_write(sel))
             {
                 return gated_revert_result(gas_limit);
             }
@@ -409,7 +410,8 @@ fn method_is_pure(arb: ArbPrecompilesEnum, sel: [u8; 4]) -> bool {
             sel == ArbSys::mapL1SenderContractAddressToL2AliasCall::SELECTOR
         }
         ArbPrecompilesEnum::ArbDebug => {
-            sel == ArbDebug::customRevertCall::SELECTOR || sel == ArbDebug::legacyErrorCall::SELECTOR
+            sel == ArbDebug::customRevertCall::SELECTOR
+                || sel == ArbDebug::legacyErrorCall::SELECTOR
         }
         _ => false,
     }
@@ -670,14 +672,19 @@ where
 mod gating_tests {
     // Note: do NOT `use ArbPrecompilesEnum::*` here, the variant names (ArbGasInfo, ArbOwner, …)
     // would shadow the sol-interface modules of the same name and break `Module::methodCall::SELECTOR`.
-    use super::{ArbPrecompilesEnum as E, method_arbos_bounds, method_is_pure, precompile_min_arbos_version};
     use super::{ArbDebug, ArbGasInfo, ArbOwner, ArbOwnerPublic, ArbSys};
+    use super::{
+        ArbPrecompilesEnum as E, method_arbos_bounds, method_is_pure, precompile_min_arbos_version,
+    };
     use alloy_core::sol_types::SolCall;
 
     #[test]
     fn precompile_level_gates() {
         assert_eq!(precompile_min_arbos_version(E::ArbNativeTokenManager), 41);
-        assert_eq!(precompile_min_arbos_version(E::ArbFilteredTransactionsManager), 60);
+        assert_eq!(
+            precompile_min_arbos_version(E::ArbFilteredTransactionsManager),
+            60
+        );
         assert_eq!(precompile_min_arbos_version(E::ArbWasm), 30);
         assert_eq!(precompile_min_arbos_version(E::ArbWasmCache), 30);
         assert_eq!(precompile_min_arbos_version(E::ArbGasInfo), 0);
@@ -739,7 +746,10 @@ mod gating_tests {
             (20, 0)
         );
         assert_eq!(
-            method_arbos_bounds(E::ArbOwnerPublic, ArbOwnerPublic::getInfraFeeAccountCall::SELECTOR),
+            method_arbos_bounds(
+                E::ArbOwnerPublic,
+                ArbOwnerPublic::getInfraFeeAccountCall::SELECTOR
+            ),
             (5, 0)
         );
         assert_eq!(
@@ -767,7 +777,10 @@ mod gating_tests {
         );
         // an ungated getter stays open
         assert_eq!(
-            method_arbos_bounds(E::ArbOwnerPublic, ArbOwnerPublic::isChainOwnerCall::SELECTOR),
+            method_arbos_bounds(
+                E::ArbOwnerPublic,
+                ArbOwnerPublic::isChainOwnerCall::SELECTOR
+            ),
             (0, 0)
         );
     }
@@ -780,12 +793,24 @@ mod gating_tests {
             E::ArbSys,
             ArbSys::mapL1SenderContractAddressToL2AliasCall::SELECTOR
         ));
-        assert!(method_is_pure(E::ArbDebug, ArbDebug::customRevertCall::SELECTOR));
-        assert!(method_is_pure(E::ArbDebug, ArbDebug::legacyErrorCall::SELECTOR));
+        assert!(method_is_pure(
+            E::ArbDebug,
+            ArbDebug::customRevertCall::SELECTOR
+        ));
+        assert!(method_is_pure(
+            E::ArbDebug,
+            ArbDebug::legacyErrorCall::SELECTOR
+        ));
 
         // A view/payable method is not pure -> rejected via delegatecall, charged the state open.
-        assert!(!method_is_pure(E::ArbSys, ArbSys::withdrawEthCall::SELECTOR));
-        assert!(!method_is_pure(E::ArbGasInfo, ArbGasInfo::getPricesInWeiCall::SELECTOR));
+        assert!(!method_is_pure(
+            E::ArbSys,
+            ArbSys::withdrawEthCall::SELECTOR
+        ));
+        assert!(!method_is_pure(
+            E::ArbGasInfo,
+            ArbGasInfo::getPricesInWeiCall::SELECTOR
+        ));
         // A pure selector on the wrong precompile is not pure.
         assert!(!method_is_pure(
             E::ArbGasInfo,

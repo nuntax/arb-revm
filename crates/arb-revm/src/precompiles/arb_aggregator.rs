@@ -27,7 +27,7 @@ where
     // args/result/OpenArbosState charge that `arbos_call_extra_gas` already folds in. Route the
     // storage ops through `MeteredJournal` and add its total to the call's gas.
     let mut journal = MeteredJournal::new(ctx.journal_mut());
-    let mut result = dispatch_arb_aggregator(&state, call, caller, gas_limit, &mut journal);
+    let mut result = dispatch_arb_aggregator(state, call, caller, gas_limit, &mut journal);
 
     let burned = journal.burned;
     if !result.gas.record_regular_cost(burned) {

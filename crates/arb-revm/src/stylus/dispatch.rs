@@ -175,11 +175,25 @@ where
                     .unwrap_or(0)
                     > 1,
             );
-            let evm_data =
-                build_evm_data(ctx, target, caller, value, code_hash, reentrant, program.cached);
+            let evm_data = build_evm_data(
+                ctx,
+                target,
+                caller,
+                value,
+                code_hash,
+                reentrant,
+                program.cached,
+            );
             let stylus_config =
                 StylusConfig::new(params.version, params.max_stack_depth, params.ink_price);
-            (serialized, compile_config, stylus_config, evm_data, gas, pages_open)
+            (
+                serialized,
+                compile_config,
+                stylus_config,
+                evm_data,
+                gas,
+                pages_open,
+            )
         };
 
         // Build the hostio bridge capturing the whole EVM (so call/create hostios can re-enter
@@ -249,9 +263,8 @@ where
             out
         };
         // Erase the borrowed lifetime to 'static (sound under the synchronous-run contract).
-        let callback: Arc<
-            Box<dyn Fn(EvmApiMethod, Vec<u8>) -> (Vec<u8>, VecReader, ArbGas) + '_>,
-        > = Arc::new(Box::new(callback));
+        let callback: Arc<Box<dyn Fn(EvmApiMethod, Vec<u8>) -> (Vec<u8>, VecReader, ArbGas) + '_>> =
+            Arc::new(Box::new(callback));
         let callback: Arc<Box<HostCallFunc>> = unsafe { mem::transmute(callback) };
         EvmApiRequestor::new(StylusHandler::new(callback))
     }
@@ -366,7 +379,12 @@ where
         // the bytecode is fetched from the database and stored in the journal cache; then takes
         // `code` directly from the account info (it is Some after load_account_with_code).
         let (kb_hash, kb_bytecode) = {
-            match self.0.ctx.journal_mut().load_account_with_code(bytecode_address) {
+            match self
+                .0
+                .ctx
+                .journal_mut()
+                .load_account_with_code(bytecode_address)
+            {
                 Ok(acc) => {
                     let hash = acc.info.code_hash;
                     let bytecode = acc.info.code.clone().unwrap_or_default();
@@ -557,7 +575,11 @@ where
             if let Ok(FrameResult::Create(outcome)) = result {
                 if *outcome.instruction_result() == InstructionResult::Revert {
                     let output = outcome.output().to_vec();
-                    return ([vec![0x00], output].concat(), empty(), ArbGas(gas.total_gas_spent()));
+                    return (
+                        [vec![0x00], output].concat(),
+                        empty(),
+                        ArbGas(gas.total_gas_spent()),
+                    );
                 }
                 if let Some(address) = outcome.address {
                     gas.erase_cost(outcome.gas().remaining() + gas_stipend);

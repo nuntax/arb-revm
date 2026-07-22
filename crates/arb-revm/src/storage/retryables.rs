@@ -201,8 +201,14 @@ fn retryable_escrow_address(ticket_id: B256) -> Address {
 fn map_transfer_error(transfer_error: Option<TransferError>, label: &str) -> Result<()> {
     match transfer_error {
         None => Ok(()),
-        Some(TransferError::OutOfFunds) => eyre::bail!("{label} failed: out of funds"),
-        Some(TransferError::OverflowPayment) => eyre::bail!("{label} failed: overflow payment"),
-        Some(TransferError::CreateCollision) => eyre::bail!("{label} failed: create collision"),
+        Some(TransferError::OutOfFunds) => {
+            eyre::bail!("{label} failed: out of funds");
+        }
+        Some(TransferError::OverflowPayment) => {
+            eyre::bail!("{label} failed: overflow payment");
+        }
+        Some(TransferError::CreateCollision) => {
+            eyre::bail!("{label} failed: create collision");
+        }
     }
 }

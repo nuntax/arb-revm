@@ -401,9 +401,9 @@ pub fn replay_fixture(fixture: &ReplayFixture) -> ReplayReport {
             Some(expected) => {
                 compare_tx(idx, expected, &outcome.result, &mut report.mismatches);
             }
-            None => report
-                .mismatches
-                .push(format!("tx[{idx}] {tx_hash:#x}: no expected entry in fixture")),
+            None => report.mismatches.push(format!(
+                "tx[{idx}] {tx_hash:#x}: no expected entry in fixture"
+            )),
         }
         merge_state_writes(&mut writes, &outcome.state);
         evm.commit(outcome.state);

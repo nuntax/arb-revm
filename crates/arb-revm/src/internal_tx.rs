@@ -5,7 +5,9 @@ use crate::{
 };
 use revm::{
     Database as _,
-    context_interface::{Block, ContextTr, JournalTr, Transaction, journaled_state::account::JournaledAccountTr},
+    context_interface::{
+        Block, ContextTr, JournalTr, Transaction, journaled_state::account::JournaledAccountTr,
+    },
     primitives::{Address, B256, Bytes, I256, U256},
     state::Bytecode,
 };
@@ -195,7 +197,7 @@ fn apply_start_block<CTX: ArbContextTr>(ctx: &mut CTX, input: &Bytes) -> Result<
             upgrade_version,
             // A runtime upgrade is never the firstTime (genesis) path.
             false,
-            &arbos_state,
+            arbos_state,
             journal,
         )
         .map_err(|err| format!("[ARBITRUM] ArbOS version upgrade failed: {err}"))?;
@@ -244,10 +246,7 @@ pub(crate) fn upgrade_arbos_version<J: JournalTr>(
             }
             // v3: clear per-batch gas cost and set amortization cap to MaxUint64.
             3 => {
-                let _ = state
-                    .l1_pricing
-                    .per_batch_gas_cost
-                    .set(0_i64, journal);
+                let _ = state.l1_pricing.per_batch_gas_cost.set(0_i64, journal);
                 let _ = state
                     .l1_pricing
                     .amortized_cost_cap_bips
@@ -277,10 +276,7 @@ pub(crate) fn upgrade_arbos_version<J: JournalTr>(
                     .get(journal)
                     .unwrap_or(0);
                 if old_cap == u64::MAX {
-                    let _ = state
-                        .l1_pricing
-                        .amortized_cost_cap_bips
-                        .set(0_u64, journal);
+                    let _ = state.l1_pricing.amortized_cost_cap_bips.set(0_u64, journal);
                 }
                 // Clear the chain-owners list, but only on a runtime upgrade: Nitro guards this
                 // with `if !firstTime { chainOwners.ClearList() }`, so the genesis cascade must
@@ -314,13 +310,25 @@ pub(crate) fn upgrade_arbos_version<J: JournalTr>(
             // Nitro: `params.UpgradeToVersion(2)` + `params.Save()` in arbosstate.go.
             // Sets Version = 2 and MinInitGas = v2MinInitGas (69).
             31 => {
-                use crate::storage::programs::{stylus_param_layout as l, pack_uint, V2_STYLUS_VERSION, V2_MIN_INIT_GAS};
+                use crate::storage::programs::{
+                    V2_MIN_INIT_GAS, V2_STYLUS_VERSION, pack_uint, stylus_param_layout as l,
+                };
                 let mut params_word = state
                     .programs
                     .read_params_word(journal)
                     .map_err(|e| format!("[ARBITRUM] v31: failed to read Stylus params: {e}"))?;
-                pack_uint(&mut params_word, l::VERSION.0,       l::VERSION.1,       V2_STYLUS_VERSION);
-                pack_uint(&mut params_word, l::MIN_INIT_GAS.0,  l::MIN_INIT_GAS.1,  V2_MIN_INIT_GAS);
+                pack_uint(
+                    &mut params_word,
+                    l::VERSION.0,
+                    l::VERSION.1,
+                    V2_STYLUS_VERSION,
+                );
+                pack_uint(
+                    &mut params_word,
+                    l::MIN_INIT_GAS.0,
+                    l::MIN_INIT_GAS.1,
+                    V2_MIN_INIT_GAS,
+                );
                 state
                     .programs
                     .write_params_word(params_word, journal)
@@ -376,7 +384,9 @@ pub(crate) fn upgrade_arbos_version<J: JournalTr>(
                     .read_params_word(journal)
                     .map_err(|e| format!("[ARBITRUM] failed to read Stylus params: {e}"))?;
                 let max_stack = u32::from_be_bytes(
-                    params_word[5..9].try_into().expect("4-byte MaxStackDepth field"),
+                    params_word[5..9]
+                        .try_into()
+                        .expect("4-byte MaxStackDepth field"),
                 );
                 if max_stack > 22_000 {
                     params_word[5..9].copy_from_slice(&22_000u32.to_be_bytes());
@@ -397,12 +407,19 @@ pub(crate) fn upgrade_arbos_version<J: JournalTr>(
             // v59: Stylus params UpgradeToVersion(3). Nitro's StylusParams.UpgradeToVersion(3) only
             // bumps the version field (2 -> 3); no other param changes.
             59 => {
-                use crate::storage::programs::{stylus_param_layout as l, pack_uint, V3_STYLUS_VERSION};
+                use crate::storage::programs::{
+                    V3_STYLUS_VERSION, pack_uint, stylus_param_layout as l,
+                };
                 let mut params_word = state
                     .programs
                     .read_params_word(journal)
                     .map_err(|e| format!("[ARBITRUM] v59: failed to read Stylus params: {e}"))?;
-                pack_uint(&mut params_word, l::VERSION.0, l::VERSION.1, V3_STYLUS_VERSION);
+                pack_uint(
+                    &mut params_word,
+                    l::VERSION.0,
+                    l::VERSION.1,
+                    V3_STYLUS_VERSION,
+                );
                 state
                     .programs
                     .write_params_word(params_word, journal)
@@ -414,15 +431,25 @@ pub(crate) fn upgrade_arbos_version<J: JournalTr>(
             // `addressSet.Initialize(transactionFiltererSubspace)` (no-op on fresh trie).
             60 => {
                 use crate::storage::programs::{
-                    stylus_param_layout as l, pack_uint, ARBOS60_MAX_WASM_SIZE,
-                    INITIAL_MAX_FRAGMENT_COUNT,
+                    ARBOS60_MAX_WASM_SIZE, INITIAL_MAX_FRAGMENT_COUNT, pack_uint,
+                    stylus_param_layout as l,
                 };
                 let mut params_word = state
                     .programs
                     .read_params_word(journal)
                     .map_err(|e| format!("[ARBITRUM] v60: failed to read Stylus params: {e}"))?;
-                pack_uint(&mut params_word, l::MAX_WASM_SIZE.0, l::MAX_WASM_SIZE.1, ARBOS60_MAX_WASM_SIZE);
-                pack_uint(&mut params_word, l::MAX_FRAGMENT_COUNT.0, l::MAX_FRAGMENT_COUNT.1, INITIAL_MAX_FRAGMENT_COUNT);
+                pack_uint(
+                    &mut params_word,
+                    l::MAX_WASM_SIZE.0,
+                    l::MAX_WASM_SIZE.1,
+                    ARBOS60_MAX_WASM_SIZE,
+                );
+                pack_uint(
+                    &mut params_word,
+                    l::MAX_FRAGMENT_COUNT.0,
+                    l::MAX_FRAGMENT_COUNT.1,
+                    INITIAL_MAX_FRAGMENT_COUNT,
+                );
                 state
                     .programs
                     .write_params_word(params_word, journal)
@@ -439,7 +466,9 @@ pub(crate) fn upgrade_arbos_version<J: JournalTr>(
                 // trie-structure divergence). Mark it here at the upgrade step.
                 journal
                     .load_account_mut(FILTERED_TRANSACTIONS_STATE_ADDRESS)
-                    .map_err(|e| format!("[ARBITRUM] failed to load filtered-tx state account: {e}"))?
+                    .map_err(|e| {
+                        format!("[ARBITRUM] failed to load filtered-tx state account: {e}")
+                    })?
                     .data
                     .set_nonce(1);
             }

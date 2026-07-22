@@ -11,7 +11,8 @@ where
 {
     let call = match ArbAddressTable::ArbAddressTableCalls::abi_decode(input) {
         Ok(c) => c,
-        Err(_) => return gated_revert_result(gas_limit),};
+        Err(_) => return gated_revert_result(gas_limit),
+    };
 
     let state = ArbosState::open();
 

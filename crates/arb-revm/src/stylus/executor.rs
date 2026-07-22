@@ -104,7 +104,8 @@ pub fn run_program(
 ) -> InterpreterResult {
     // SAFETY: `serialized` is a module produced by our own `native::compile`.
     let mut instance =
-        match unsafe { NativeInstance::deserialize(serialized, compile_config, evm_api, evm_data) } {
+        match unsafe { NativeInstance::deserialize(serialized, compile_config, evm_api, evm_data) }
+        {
             Ok(instance) => instance,
             Err(err) => {
                 return InterpreterResult {
@@ -123,7 +124,10 @@ pub fn run_program(
         Err(_) => (UserOutcomeKind::Failure, Vec::new()),
     };
 
-    let mut gas_left = stylus_config.pricing.ink_to_gas(instance.ink_left().into()).0;
+    let mut gas_left = stylus_config
+        .pricing
+        .ink_to_gas(instance.ink_left().into())
+        .0;
     let result = match kind {
         UserOutcomeKind::Success => InstructionResult::Return,
         UserOutcomeKind::Revert | UserOutcomeKind::Failure => InstructionResult::Revert,

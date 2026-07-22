@@ -55,10 +55,9 @@ pub use revm;
 pub use spec::ArbSpecId;
 pub use storage::{
     AddressSet, AddressTable, ArbBlockHeaderInfo, ArbFeatures, ArbosPrograms, ArbosState,
-    BatchPosterState,
-    BatchPosterTable, BlockHashes, ChainConfig, L1Pricing, L2Pricing, ProgramDataPricer,
-    RetryableRecord, Retryables, SendMerkle, StorageBacked, StorageBytes, StorageQueue,
-    StorageSlot, StorageSpace,
+    BatchPosterState, BatchPosterTable, BlockHashes, ChainConfig, L1Pricing, L2Pricing,
+    ProgramDataPricer, RetryableRecord, Retryables, SendMerkle, StorageBacked, StorageBytes,
+    StorageQueue, StorageSlot, StorageSpace,
 };
 pub use submit_retryable_tx::{
     build_scheduled_retry_from_submit, submit_retryable_auto_redeem_scheduled,
